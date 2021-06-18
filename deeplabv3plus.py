@@ -16,6 +16,28 @@ from .utils import get_regularizer, select_final_activation
 logger = logging.getLogger(__name__)
 
 def configure_backbone(name:str, input_tensor:tf.Tensor):
+    """Select the backbone and return it
+
+    Parameters
+    ----------
+    name : str
+        The name of the network (currently, resnet50 is implemented)
+    input_tensor : tf.Tensor
+        The input tensor
+
+    Returns
+    -------
+    tf.Model, str, str
+        The backbone model and the layer for the low-level and high-level features
+        layer_low is reduced by a factor of 4 to the input and layer_high by 16.
+
+    Raises
+    ------
+    ValueError
+        If the input_tensor can not be used by the network
+    NotImplementedError
+        If a not recognized network is selected
+    """
     rank = len(input_tensor.shape) - 2
     if name == 'resnet50':
         if rank != 2:
@@ -56,7 +78,8 @@ def upsample(x:tf.Tensor, size:List, name="up") -> tf.Tensor:
     return x
 
 def convolution(x:tf.Tensor, filters:float, size=3, dilation_rate=None, padding="same",
-    depthwise_separable=False, depth_activation=False, activation="relu", regularizer=None, name="conv") -> tf.Tensor:
+    depthwise_separable=False, depth_activation=False, activation="relu", regularizer=None,
+    drop_out=None, name="conv") -> tf.Tensor:
     """Do a convolution (depthwise if specified). Depthwise convolutions work
     by first applying a convolution to each feature map separately followed
     by a 1x1 convolution.
@@ -77,6 +100,12 @@ def convolution(x:tf.Tensor, filters:float, size=3, dilation_rate=None, padding=
         If the convolution should be depthwise separable, by default False
     depth_activation : bool, optional
         If there should be an activation after the depthwise convolution, by default False
+    activation : str, optional
+        which activation should be used, by default 'relu'
+    regularize : tuple, optional
+        if there should be regularization, by default (True, 'L2', 0.001)
+    drop_out : tuple, optional
+        if dropout should be used, by default (True, 0.2)    
     name : str, optional
         The name of the layer, by default "conv"
 
@@ -128,7 +157,8 @@ def convolution(x:tf.Tensor, filters:float, size=3, dilation_rate=None, padding=
     )(x)
     return x
 
-def aspp(x:tf.Tensor, rates:List, filters=256, name="ASPP") -> tf.Tensor:
+def aspp(x:tf.Tensor, rates:List, filters=256, size=3, activation="relu",
+    regularizer=None, drop_out=None, name="ASPP") -> tf.Tensor:
     """Do atrous convolutions spatial pyramid pooling, the rates are used for
     3x3 convolutions with additional features from a 1x1 convolution and
     global pooling. The number of output features is (2 + len(rates)) * filters.
@@ -141,6 +171,14 @@ def aspp(x:tf.Tensor, rates:List, filters=256, name="ASPP") -> tf.Tensor:
         The atrous (dilation rates)
     filters : int, optional
         How many filters to use per layer, by default 256
+    size : int, optional
+        The kernel size (the same will be used in all dimensions), by default 3
+    activation : str, optional
+        which activation should be used, by default 'relu'
+    regularize : tuple, optional
+        if there should be regularization, by default (True, 'L2', 0.001)
+    drop_out : tuple, optional
+        if dropout should be used, by default (True, 0.2)
     name : str, optional
         The name, by default "ASPP"
 
@@ -149,6 +187,13 @@ def aspp(x:tf.Tensor, rates:List, filters=256, name="ASPP") -> tf.Tensor:
     tf.Tensor
         The resulting tensor
     """
+
+    std = {
+        "regularizer" : regularizer,
+        "drop_out" : drop_out,
+        "activation" : activation
+    }
+
     input_size = tf.keras.backend.int_shape(x)[1:3]
     results = []
     # do 1x1
@@ -157,8 +202,8 @@ def aspp(x:tf.Tensor, rates:List, filters=256, name="ASPP") -> tf.Tensor:
     for r in rates:
         results.append(
             convolution(
-                x, filters, size=3, dilation_rate=r, depthwise_separable=True,
-                depth_activation=True, name=f"{name}/conv_3x3_rate_{r}"
+                x, filters, size=size, dilation_rate=r, depthwise_separable=True,
+                depth_activation=True, name=f"{name}/conv_3x3_rate_{r}", **std
             )
         )
     # do global average pooling
@@ -166,51 +211,58 @@ def aspp(x:tf.Tensor, rates:List, filters=256, name="ASPP") -> tf.Tensor:
     # add the dimensions again
     pool = tf.expand_dims(pool, axis=1, name=f"{name}/global_pool/expand0")
     pool = tf.expand_dims(pool, axis=1, name=f"{name}/global_pool/expand1")
-    pool = convolution(pool, filters, size=1, name=f"{name}/global_pool/conv")
+    pool = convolution(pool, filters, size=1, name=f"{name}/global_pool/conv", **std)
     results.append(upsample(pool, size=input_size, name=f"{name}/global_pool/up"))
     # concatenate all feature maps
     return tf.keras.layers.Concatenate(name=f"{name}/concat")(results)
 
-def DeepLabv3plus(input_tensor, out_channels, loss, is_training=True, kernel_dims=3, drop_out=(True, 0.2),
-    regularize=(True, 'L2', 0.001), backbone='resnet50', aspp_rates=(6,12,18), do_batch_normalization=True,
-    do_bias=False, activation='relu', debug=False):
-    """Initialize the 100 layers Tiramisu
+# Original names are used for better readability pylint: disable=invalid-name
+def DeepLabv3plus(input_tensor:tf.Tensor, out_channels:int, loss:str, is_training=True,
+    kernel_dims=3, drop_out=(True, 0.2), regularize=(True, 'L2', 0.001), backbone='resnet50', 
+    aspp_rates=(6,12,18), activation='relu', model=Model, debug=False)->Model:
+    """Build the DeepLabv3plus model
 
     Parameters
     ----------
+    input_tensor : tf.Tensor
+        the tensor used as input, used to derive the rank and the output will have
+        the same shape except the input channels will be replaced by the output ones.
+    out_channels : int
+        The number of output channels to use (number of classes + background)
     loss : str
         the type of loss to use
     is_training : bool, optional
-        if in training, by default True
+        if in training, by default True, does not change anything right now
     kernel_dims : int, optional
         the dimensions of the kernel (dimension is automatic), by default 3
     drop_out : tuple, optional
-        if dropout should be used, by default (True, 0.2) (from paper)
+        if dropout should be used, by default (True, 0.2)
     regularize : tuple, optional
         if there should be regularization, by default (True, 'L2', 0.001)
-    do_batch_normalization : bool, optional
-        has to be true for dense nets, by default True
-    do_bias : bool, optional
-        has to be false because batch norm, by default False
     activation : str, optional
         which activation should be used, by default 'relu'
+    model : tf.keras.Model, optional
+        Which model should be used for generation, can be used to use a sub-
+        classed model with custom functionality, by default tf.keras.Model
     """
 
-    if do_bias:
-        print('use no bias with this network, bias set to False')
-        do_bias = False
-    if not do_batch_normalization:
-        print('always uses batch norm, set to True')
-        do_batch_normalization = True
+    # TODO: add change in stride to only reduce features by factor 8 (memory intensive), maybe as separate function
 
     regularizer = get_regularizer(*regularize)
     backbone, layer_low, layer_high = configure_backbone(backbone, input_tensor)
 
+    assert is_training, "only use this for training"
+
+    # define a standard config
+    std = {
+        "regularizer" : get_regularizer(*regularize),
+        "drop_out" : drop_out,
+        "activation" : activation
+    }
+
     # make backbone untrainable
     # TODO: make better scheme, like releasing it after some time
     backbone.trainable = False
-
-    # rename layer
 
     x = input_tensor
     input_size = tf.keras.backend.int_shape(x)[1:3]
@@ -218,23 +270,21 @@ def DeepLabv3plus(input_tensor, out_channels, loss, is_training=True, kernel_dim
     logger.debug('Start model definition')
     logger.debug('Input Shape: %s', x.get_shape())
 
-    # TODO: add change in stride to only reduce features by factor 8 (memory intensive)
-
     # for lower features, first reduce number of features with 1x1 conv with 48 filters
     x_low = backbone.get_layer(layer_low).output
     if debug:
         x_low = diagnose_wrapper(x_low, name="x_low_initial_output")
     x_low_size = tf.keras.backend.int_shape(x_low)[1:3]
-    x_low = convolution(x_low, filters=48, size=1, name="low-level-reduction")
+    x_low = convolution(x_low, filters=48, size=1, name="low-level-reduction", **std)
     if debug:
         x_low = diagnose_wrapper(x_low, name="x_low_after_reduction")
 
     x_high = backbone.get_layer(layer_high).output
     if debug:
         x_high = diagnose_wrapper(x_high, name="x_high_initial_output")
-    x_high = aspp(x_high, aspp_rates, name="ASPP")
+    x_high = aspp(x_high, aspp_rates, name="ASPP", **std)
     # 1x1 convolution
-    x_high = convolution(x_high, size=1, filters=256, name="high-feature-red")
+    x_high = convolution(x_high, size=1, filters=256, name="high-feature-red", **std)
     # upsample to the same size as x_low
     x_high = upsample(x_high, size=x_low_size, name="upsample-high")
     if debug:
@@ -246,16 +296,20 @@ def DeepLabv3plus(input_tensor, out_channels, loss, is_training=True, kernel_dim
     x = convolution(
         x,
         filters=256,
+        size=kernel_dims,
         depthwise_separable=True,
         depth_activation=True,
-        name='pred-conv0'
+        name='pred-conv0',
+        **std
     )
     x = convolution(
         x,
         filters=256,
+        size=kernel_dims,
         depthwise_separable=True,
         depth_activation=True,
-        name='pred-conv1'
+        name='pred-conv1',
+        **std
     )
     x = upsample(x, size=input_size, name='final-upsample')
 
@@ -281,7 +335,7 @@ def DeepLabv3plus(input_tensor, out_channels, loss, is_training=True, kernel_dim
     if debug:
         probabilities = diagnose_wrapper(probabilities, name="probabilities")
 
-    return Model(inputs=input_tensor, outputs=probabilities)
+    return model(inputs=input_tensor, outputs=probabilities)
 
 def diagnose_output(x:tf.Tensor, name="debug") -> tf.Tensor:
     """Diagnose output. This can be added as an intermediate layer which will not
