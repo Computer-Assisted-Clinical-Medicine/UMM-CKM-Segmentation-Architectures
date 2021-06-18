@@ -26,6 +26,7 @@ python -m pip install -r requirements.txt
 ## Running the tests
 
 - The test can be run using pytest and will create a test_data directory, where the created test data will be saved.
+- They can also be run by hand using python -m SegmentationArchitectures.test_architectures
 
 ### Running the training
 

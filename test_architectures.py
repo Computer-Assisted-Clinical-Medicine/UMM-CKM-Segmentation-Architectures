@@ -4,7 +4,7 @@ import pytest
 import tensorflow as tf
 import numpy as np
 
-from deeplabv3plus import DeepLabv3plus
+from .deeplabv3plus import DeepLabv3plus
 
 models = [DeepLabv3plus]
 
@@ -28,7 +28,7 @@ def test_model_creation(model):
     )
 
     # create random data with simple thresholds as test data
-    n_samples = batch * 400
+    n_samples = batch * 2
     foreground = np.random.randint(2, size=(n_samples,) + input_shape[:-1] + (1,))
     background = 1 - foreground
     labels = np.concatenate([background, foreground], axis=-1)

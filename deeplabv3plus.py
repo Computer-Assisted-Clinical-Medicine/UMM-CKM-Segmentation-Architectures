@@ -10,7 +10,7 @@ from typing import List
 import tensorflow as tf
 from tensorflow.keras import Model
 
-from utils import get_regularizer, select_final_activation
+from .utils import get_regularizer, select_final_activation
 
 #configure logger
 logger = logging.getLogger(__name__)
