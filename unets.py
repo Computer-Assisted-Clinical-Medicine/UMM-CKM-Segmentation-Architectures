@@ -8,7 +8,7 @@ import layers
 from functools import partial
 
 
-def backbone_unet(input_tensor=None, input_shape=None, out_channels=None, n_filter=[8, 16, 32, 64, 128],
+def unet(input_tensor=None, input_shape=None, out_channels=None, n_filter=[8, 16, 32, 64, 128],
                   filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=[False, 0.2],
                   upscale='TRANS_CONV', downscale='MAX_POOL', regularize=0.00001, padding='SAME', activation='relu',
                   name='Unet', se_layer=False, cbam=False, ratio=1, *args, **kwargs):
