@@ -4,17 +4,26 @@ import pytest
 import tensorflow as tf
 import numpy as np
 
-from .deeplabv3plus import DeepLabv3plus
+from .deeplab import DeepLabv3plus
+from .densenet import DenseTiramisu
 
-models = [DeepLabv3plus]
+models = [DeepLabv3plus, DenseTiramisu]
+
 
 @pytest.mark.parametrize("model", models)
 def test_model_creation(model):
     in_channels = 3
     out_channels = 2
-    input_shape = (256, 256, in_channels)
+    if model.__name__ == "DeepLabv3plus":
+        input_shape = (256, 256, in_channels)
+    else:
+        input_shape = (128, 128, in_channels)
     batch = 4
-    model_built:tf.keras.Model = model(tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float), out_channels, "DICE")
+    model_built: tf.keras.Model = model(
+        tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
+        out_channels,
+        "DICE",
+    )
     output_shape = model_built.output.shape.as_list()
     # make sure that the dimensions are right
     assert output_shape[0] == batch
@@ -24,7 +33,7 @@ def test_model_creation(model):
     model_built.compile(
         loss=tf.keras.losses.CategoricalCrossentropy(),
         metrics="acc",
-        optimizer=tf.keras.optimizers.Adam()
+        optimizer=tf.keras.optimizers.Adam(),
     )
 
     # create random data with simple thresholds as test data
@@ -38,11 +47,8 @@ def test_model_creation(model):
     for channel in range(in_channels):
         samples[..., channel] += labels[..., 1]
 
-    model_built.fit(
-        x=samples,
-        y=labels,
-        batch_size=batch
-    )
+    model_built.fit(x=samples, y=labels, batch_size=batch)
+
 
 if __name__ == "__main__":
     for mod in models:
