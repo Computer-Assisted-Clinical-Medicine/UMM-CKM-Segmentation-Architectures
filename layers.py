@@ -414,7 +414,7 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
 
 
 def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
-         act_func, use_bias, regularizer, cross_hair, do_summary=False, l2_normalize=False):
+         act_func, use_bias, regularizer, do_summary=False, l2_normalize=False):
     '''!
     Implements a last layer computing logits
 
