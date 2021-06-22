@@ -10,10 +10,10 @@ from . import layers
 from .utils import get_regularizer, select_final_activation
 
 
-def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32, 64, 128),
-                  filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
-                  upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME', activation='relu',
-                  name='Unet', se_layer=False, cbam=False, ratio=1, **kwargs):
+def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
+         filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
+         upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME', activation='relu',
+         name='Unet', se_layer=False, cbam=False, ratio=1, **kwargs):
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
@@ -24,6 +24,7 @@ def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32
     :param input_tensor: input tensorflow tensor/image.
     :param input_shape: shape of the input tensor.
     :param out_channels: number of classes that needs to be segmented.
+    :param loss: loss function as a string
     :param n_filter: a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
     By default: [8, 16, 32, 64, 128].
     :param filter_shape: shape of all the convolution filter, by default: 3.
@@ -47,7 +48,7 @@ def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32
     """
 
     available_models = ['Unet', 'SEUnet', 'SEAttnUnet',
-                    'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet']
+                        'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet']
     se_models = ['SEUnet', 'SEAttnUnet']
     cbam_models = ['CBAMUnet', 'CBAMAttnUnet']
     attn_models = ['AttnUnet', 'SEAttnUnet', 'CBAMAttnUnet']
@@ -65,13 +66,14 @@ def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    conv = partial(layers.convolutional, filter_shape=filter_shape, stride=stride, batch_normalization=batch_normalization
-                                       , drop_out=drop_out, use_bias=use_bias, regularizer=regularizer, padding=padding,
-                                       act_func=activation, dilation_rate=1, cross_hair=False)
+    conv = partial(layers.convolutional, filter_shape=filter_shape, stride=stride,
+                   batch_normalization=batch_normalization
+                   , drop_out=drop_out, use_bias=use_bias, regularizer=regularizer, padding=padding,
+                   act_func=activation, dilation_rate=1, cross_hair=False)
     downscale = partial(layers.downscale, downscale=downscale, filter_shape=filter_shape, act_func=activation,
-                                        use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
+                        use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
     upscale = partial(layers.upscale, upscale=upscale, filter_shape=filter_shape, act_func=activation,
-                                    use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
+                      use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
     gate_signal = partial(layers.unet_gating_signal, batch_normalization=batch_normalization)
     attn_block = partial(layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization)
     se_block = partial(layers.se_block, activation=activation, ratio=ratio)
@@ -183,7 +185,7 @@ def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32
 
     # final output layer
     logits = layers.last(residual9, outputs, filter_shape=1, n_filter=out_channels, stride=stride,
-                        padding=padding, act_func=select_final_activation(loss, out_channels),
-                        use_bias=False, regularizer=regularizer, l2_normalize=False)
+                         padding=padding, act_func=select_final_activation(loss, out_channels),
+                         use_bias=False, regularizer=regularizer, l2_normalize=False)
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)
