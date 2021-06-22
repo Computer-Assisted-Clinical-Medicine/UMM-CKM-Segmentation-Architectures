@@ -1,13 +1,17 @@
 # pylint: disable=all
 
+import logging
+import sys
+
+import numpy as np
 import pytest
 import tensorflow as tf
-import numpy as np
 
 from .deeplab import DeepLabv3plus
 from .densenets import DenseTiramisu
+from .unets import unet
 
-models = [DeepLabv3plus, DenseTiramisu]
+models = [DeepLabv3plus, DenseTiramisu, unet]
 
 
 @pytest.mark.parametrize("model", models)
@@ -51,5 +55,14 @@ def test_model_creation(model):
 
 
 if __name__ == "__main__":
+
+    # print all debug messages
+    logger = logging.getLogger("")
+    logger.setLevel(logging.DEBUG)
+    sh = logging.StreamHandler(sys.stdout)
+    formatter = logging.Formatter('%(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s')
+    sh.setFormatter(formatter)
+    logger.addHandler(sh)
+
     for mod in models:
         test_model_creation(mod)

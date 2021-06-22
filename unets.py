@@ -1,17 +1,19 @@
-import tensorflow as tf
-import numpy as np
-from tensorflow.keras import backend as K
-from tensorflow.keras.layers import add, multiply, Lambda, Activation, GlobalAveragePooling2D, GlobalMaxPooling2D, \
-    Reshape, Dense, Permute, Concatenate, Conv2D, Add, Input
-from tensorflow.keras.activations import sigmoid
-import layers
+"""
+Implements multiple different kinds of UNets
+"""
 from functools import partial
 
+import tensorflow as tf
+from tensorflow.keras.layers import Add, Concatenate
 
-def unet(input_tensor=None, input_shape=None, out_channels=None, n_filter=[8, 16, 32, 64, 128],
-                  filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=[False, 0.2],
-                  upscale='TRANS_CONV', downscale='MAX_POOL', regularize=0.00001, padding='SAME', activation='relu',
-                  name='Unet', se_layer=False, cbam=False, ratio=1, *args, **kwargs):
+from . import layers
+from .utils import get_regularizer, select_final_activation
+
+
+def unet(input_tensor:tf.Tensor, out_channels:int, loss:str, n_filter=(8, 16, 32, 64, 128),
+                  filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
+                  upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME', activation='relu',
+                  name='Unet', se_layer=False, cbam=False, ratio=1, **kwargs):
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
@@ -59,23 +61,24 @@ def unet(input_tensor=None, input_shape=None, out_channels=None, n_filter=[8, 16
     rank = len(input_tensor.shape) - 2
     filter_shape = [filter_shape] * rank
     stride = [stride] * rank
-    regularizer = tf.keras.regularizers.L2(l2=regularize)
+
+    regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    conv = partial(layers.convolutional(filter_shape=filter_shape, stride=stride, batch_normalization=batch_normalization
+    conv = partial(layers.convolutional, filter_shape=filter_shape, stride=stride, batch_normalization=batch_normalization
                                        , drop_out=drop_out, use_bias=use_bias, regularizer=regularizer, padding=padding,
-                                       activation=activation))
-    downscale = partial(layers.downscale(downscale=downscale, filter_shape=filter_shape, activation=activation,
-                                        use_bias=use_bias, regularizer=regularizer, padding=padding))
-    upscale = partial(layers.upscale(upscale=upscale, filter_shape=filter_shape, stride=stride, activation=activation,
-                                    use_bias=use_bias, regularizer=regularizer, padding=padding))
-    gate_signal = partial(layers.unet_gating_signal(batch_normalization=batch_normalization))
-    attn_block = partial(layers.attn_gating_block(use_bias=use_bias, batch_normalization=batch_normalization))
-    se_block = partial(layers.se_block(activation=activation, ratio=ratio))
-    cbam_block = partial(layers.cbam_block(ratio=ratio))
+                                       act_func=activation, dilation_rate=1, cross_hair=False)
+    downscale = partial(layers.downscale, downscale=downscale, filter_shape=filter_shape, act_func=activation,
+                                        use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
+    upscale = partial(layers.upscale, upscale=upscale, filter_shape=filter_shape, act_func=activation,
+                                    use_bias=use_bias, regularizer=regularizer, padding=padding, dilation_rate=1, cross_hair=False)
+    gate_signal = partial(layers.unet_gating_signal, batch_normalization=batch_normalization)
+    attn_block = partial(layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization)
+    se_block = partial(layers.se_block, activation=activation, ratio=ratio)
+    cbam_block = partial(layers.cbam_block, ratio=ratio)
 
     # input layer
-    img_input = Input(shape=input_shape)
+    img_input = input_tensor
     # encoder block 1
     x1_0 = conv(img_input, n_filter=n_filter[0])
     x1_1 = conv(x1_0, n_filter=n_filter[0])
@@ -180,7 +183,7 @@ def unet(input_tensor=None, input_shape=None, out_channels=None, n_filter=[8, 16
 
     # final output layer
     logits = layers.last(residual9, outputs, filter_shape=1, n_filter=out_channels, stride=stride,
-                        padding=padding, act_func=layers.select_final_activation(loss, out_channels),
+                        padding=padding, act_func=select_final_activation(loss, out_channels),
                         use_bias=False, regularizer=regularizer, l2_normalize=False)
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)

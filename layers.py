@@ -1,17 +1,20 @@
+import logging
+
+import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import backend as K
-from tensorflow.keras.layers import add, multiply, Lambda, Activation, GlobalAveragePooling2D, GlobalMaxPooling2D,\
-    Reshape, Dense, Permute, Concatenate, Conv2D, Add
-from tensorflow.keras.activations import sigmoid
-import numpy as np
+from tensorflow.keras.layers import (Activation, Add, Concatenate, Conv2D,
+                                     Dense, GlobalAveragePooling2D,
+                                     GlobalMaxPooling2D, Lambda, Permute,
+                                     Reshape, add, multiply)
 
-
-VERBOSE = False
+# configure logger
+logger = logging.getLogger(__name__)
 
 def activation(act_func):
     if act_func in tf.keras.activations.__dict__:
-       return tf.keras.layers.Activation(act_func)
+        return tf.keras.layers.Activation(act_func)
     elif act_func == 'leaky_relu':
         return tf.keras.layers.LeakyReLU()
     elif act_func == 'swish':
@@ -24,7 +27,7 @@ def swish(x, beta=1):
 
 
 def expend_as(tensor, rep, axis, name=None):
-    my_repeat = Lambda(lambda x, repnum: K.repeat_elements(x, repnum, axis=axis), arguments={'repnum': rep})(tensor)
+    my_repeat = Lambda(lambda x, repnum: K.repeat_elements(x, repnum, axis=axis), arguments={'repnum': rep}, name=name)(tensor)
                        # name='psi_up' + name)(tensor)
 
     return my_repeat
@@ -76,9 +79,6 @@ def attn_gating_block(x, g, inter_shape, use_bias, batch_normalization, name=Non
                                                          shape_theta_x[2] // shape_g[2],
                                                          shape_theta_x[3] // shape_g[3]),
                                                      padding='same', use_bias=use_bias)(phi_g)  # , name='g_up' + name)(phi_g)  # 16
-        # upsample_g = tf.keras.layers.UpSampling3D((shape_theta_x[1] // shape_g[1],
-        #                                            shape_theta_x[2] // shape_g[2],
-        #                                            shape_theta_x[3] // shape_g[3]))(phi_g)  # , name='g_up' + name)(phi_g)  # 16
         concat_xg = add([upsample_g, theta_x])
         act_xg = Activation('relu')(concat_xg)
         psi = tf.keras.layers.Conv3D(1, (1, 1, 1), padding='same', use_bias=use_bias)(
@@ -199,10 +199,8 @@ def spatial_attention(input_feature):
     kernel_size = 5
 
     if K.image_data_format() == "channels_first":
-        channel = input_feature.shape[1]
         cbam_feature = Permute((2, 3, 1))(input_feature)
     else:
-        channel = input_feature.shape[-1]
         cbam_feature = input_feature
 
     avg_pool = Lambda(lambda x: K.mean(x, axis=3, keepdims=True))(cbam_feature)
@@ -248,37 +246,27 @@ def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
     @todo do_summary
     '''
 
-    if VERBOSE:
-        print('   Convolution')
-        print('    Input: ', x.shape.as_list())
+    logger.debug('Convolution')
+    logger.debug('Input: %s', x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        print('    Kernel: ', filter_shape)
+        logger.debug('Kernel: %s', filter_shape)
         convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape, strides=stride,
                                                      padding=padding,
                                                      dilation_rate=dilation_rate, use_bias=use_bias,
                                                      kernel_regularizer=regularizer)
         x = convolutional_layer(x)
     elif tf.rank(x).numpy() == 5:
-            print('    Kernel: ', filter_shape)
-            convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape, strides=stride,
+        logger.debug('Kernel: %s', filter_shape)
+        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape, strides=stride,
                                                          padding=padding,
                                                          dilation_rate=dilation_rate,
                                                          use_bias=use_bias, kernel_regularizer=regularizer)
-            x = convolutional_layer(x)
+        x = convolutional_layer(x)
 
     x = activation(act_func)(x)
 
-    # if do_summary:
-    #     with tf.device('/cpu:0'):
-    #         tf.summary.histogram('weights', convolutional_layer.get_weights()[0])
-    #         tf.summary.histogram('activations', x)
-    #         if use_bias:
-    #                 with tf.device('/cpu:0'):
-    #                     tf.summary.histogram('biases', convolutional_layer.get_weights()[1])
-
-    if VERBOSE:
-        print('    Output: ', x.shape)
+    logger.debug('Output: %s', x.shape)
 
     if batch_normalization:
         x = tf.keras.layers.BatchNormalization()(x)
@@ -321,17 +309,16 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
 
     # ToDo: change between 2D and 3D based on rank of x
     if downscale == 'STRIDE':
-        if VERBOSE:
-            print('   Convolution with Stride')
-            print('    Input: ', x.shape.as_list())
+        logger.debug('Convolution with Stride')
+        logger.debug('Input: %s', x.shape.as_list())
         if tf.rank(x).numpy() == 4:
-            print('    Kernel: ', filter_shape, ',Stride: ', np.multiply(stride, 2))
+            logger.debug('Kernel: %s,Stride: %s', filter_shape, np.multiply(stride, 2))
             convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape,
                                                          strides=np.multiply(stride, 2),
                                                          padding=padding, dilation_rate=dilation_rate,
                                                          use_bias=use_bias, kernel_regularizer=regularizer)
         elif tf.rank(x).numpy() == 5:
-            print('    Kernel: ', filter_shape, ',Stride: ', np.multiply(stride, 2))
+            logger.debug('Kernel: %s,Stride: %s', filter_shape, np.multiply(stride, 2))
             convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape,
                                                          strides=np.multiply(stride, 2),
                                                          padding=padding, dilation_rate=dilation_rate,
@@ -340,50 +327,26 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
         x = convolutional_layer(x)
         x = activation(act_func)(x)
 
-        # if do_summary:
-        #     with tf.device('/cpu:0'):
-        #         tf.summary.histogram('weights', convolutional_layer.get_weights()[0])
-        #         if use_bias:
-        #             with tf.device('/cpu:0'):
-        #                 tf.summary.histogram('biases', convolutional_layer.get_weights()[1])
-
     elif downscale == 'MAX_POOL':
         if tf.rank(x).numpy() == 4:
-            if VERBOSE:
-                print('   Max Pool')
-                print('    Pool Size: ', [2, 2])
-                print('    Input: ', x.shape.as_list())
+            logger.debug('Max Pool')
+            logger.debug('Pool Size: %s', [2, 2])
+            logger.debug('Input: %s', x.shape.as_list())
 
             x = tf.keras.layers.MaxPool2D(pool_size=[2, 2], strides=[2, 2], padding=padding)(x)
         elif tf.rank(x).numpy() == 5:
-            if VERBOSE:
-                print('   Max Pool')
-                print('    Pool Size: ', [2, 2, 2])
-                print('    Input: ', x.shape.as_list())
+            logger.debug('Max Pool')
+            logger.debug('Pool Size: %s', [2, 2, 2])
+            logger.debug('Input: %s', x.shape.as_list())
 
             x = tf.keras.layers.MaxPool3D(pool_size=[2, 2, 2], strides=[2, 2, 2], padding=padding)(x)
 
     elif downscale == 'MAX_POOL_ARGMAX':
-        if VERBOSE:
-            print('   Max Pool with Argmax')
-            print('    Kernel: ', [1, 2, 2, 1])
-            print('    Input: ', x.shape.as_list())
-        # # We need to store input shape of this maxpooling layer to use as output shape of corresponding the unpooling upscale layer
-        # input_shape = x.shape.as_list()
-        # x, max_indices = tf.nn.max_pool_with_argmax(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1],
-        #                                             padding=options['padding'])
-        #
-        # # store both input_shape and max_indices to use as params for unpooling at max_indices upscale layer.
-        # unpool_params = [input_shape, max_indices]
-        #     x = op.convolution(x, filter_shape, n_filter, [2, 2], options['padding'], options['dilation_rate'],
-        #                        do_summary)
+        logger.debug('Max Pool with Argmax')
+        logger.debug('Kernel: %s', [1, 2, 2, 1])
+        logger.debug('Input: %s', x.shape.as_list())
 
-    # if do_summary:
-    #     with tf.device('/cpu:0'):
-    #         tf.summary.histogram('activations', x)
-
-    if VERBOSE:
-        print('    Output: ', x.shape)
+    logger.debug('Output: %s', x.shape)
 
     return x
 
@@ -420,10 +383,9 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
 
         strides = np.multiply(stride, 2)
 
-        if VERBOSE:
-            print('   Transposed Convolution')
-            print('    Kernel: ', filter_shape, ' Stride: ', strides)
-            print('    Input: ', x.shape.as_list())
+        logger.debug('Transposed Convolution')
+        logger.debug('Kernel: %s Stride: %s', filter_shape, strides)
+        logger.debug('Input: %s', x.shape.as_list())
 
         if tf.rank(x).numpy() == 4:
             convolutional_layer = tf.keras.layers.Conv2DTranspose(filters=n_filter, kernel_size=filter_shape,
@@ -441,34 +403,13 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
 
         x = activation(act_func)(x)
 
-        # if do_summary:
-        #     with tf.device('/cpu:0'):
-        #         tf.summary.histogram('weights', convolutional_layer.get_weights()[0])
-        #         if use_bias:
-        #             with tf.device('/cpu:0'):
-        #                 tf.summary.histogram('biases', convolutional_layer.get_weights()[1])
-
     elif upscale == 'BI_INTER':
-        pass
-        # s = x.shape.as_list()
-        # # resize each channel
-        # new_size = np.multiply(s[1:3], 2)
-        # x = tf.image.resize_images(x, new_size)
-        # if VERBOSE:
-        #     print('  ', 'Upscale (Bilinear Interpolation) to ', x.shape)
-        # # apply convolution to reduce number of channels
-        # x = op.convolution(x, filter_shape, n_filter, [1, 1], options['padding'], options['dilation_rate'], do_summary)
+        raise NotImplementedError("BI_INTER not implemented")
 
     elif upscale == 'UNPOOL_MAX_IND':
-        # # s = x.shape.as_list()
-        # # apply convolution to reduce number of channels
-        # x = op.convolution(x, filter_shape, n_filter, [1, 1], options['padding'], options['dilation_rate'], do_summary)
-        # x = op.unpool_at_indices(x, outshape=variables['unpool_param'][0], indices=variables['unpool_param'][1])
-        if VERBOSE:
-            print('  ', 'Upscale (Unpool with Maxpool Indices) to ', x.shape)
+        raise NotImplementedError("UNPOOL_MAX_IND not implemented")
 
-    if VERBOSE:
-        print('    Output: ', x.shape)
+    logger.debug('Output: %s', x.shape)
     return x
 
 
@@ -491,12 +432,11 @@ def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
     @todo do_summary, BI_INTER
     '''
 
-    if VERBOSE:
-        print('   Convolution')
-        print('    Input: ', x.shape.as_list())
+    logger.debug('Convolution')
+    logger.debug('Input: %s', x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        print('    Kernel: ', filter_shape)
+        logger.debug('Kernel: %s', filter_shape)
         convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape, strides=stride,
                                                      padding=padding, dilation_rate=dilation_rate,
                                                      use_bias=use_bias, kernel_regularizer=regularizer)
@@ -504,7 +444,7 @@ def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
 
     elif tf.rank(x).numpy() == 5:
 
-        print('    Kernel: ', filter_shape)
+        logger.debug('Kernel: %s', filter_shape)
         convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape, strides=stride,
                                                      padding=padding, dilation_rate=dilation_rate,
                                                      use_bias=use_bias, kernel_regularizer=regularizer)
@@ -518,15 +458,3 @@ def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
         x = tf.math.l2_normalize(x, axis=-1)
 
     return x
-
-
-def select_final_activation(loss, out_channels):
-    # http://dataaspirant.com/2017/03/07/difference-between-softmax-function-and-sigmoid-function/
-    if out_channels > 2 or loss in ['DICE', 'TVE', 'GDL']:
-        # Dice, GDL and Tversky require SoftMax
-        return 'softmax'
-    elif out_channels == 2 and loss in ['CEL', 'WCEL', 'GCEL']:
-        return 'sigmoid'
-    else:
-        raise ValueError(loss, 'is not a supported loss function or cannot combined with ',
-                            out_channels, 'output channels.')
