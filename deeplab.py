@@ -112,8 +112,8 @@ def convolution(
         If there should be an activation after the depthwise convolution, by default False
     activation : str, optional
         which activation should be used, by default 'relu'
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     drop_out : tuple, optional
         if dropout should be used, by default (True, 0.2)
     name : str, optional
@@ -190,8 +190,8 @@ def aspp(
         The kernel size (the same will be used in all dimensions), by default 3
     activation : str, optional
         which activation should be used, by default 'relu'
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     drop_out : tuple, optional
         if dropout should be used, by default (True, 0.2)
     name : str, optional

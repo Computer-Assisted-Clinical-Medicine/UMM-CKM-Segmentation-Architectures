@@ -4,4 +4,4 @@ contains one architecture and can contain multiple different models with minor c
 """
 # pylint: disable=invalid-name
 from . import deeplab
-from . import densenet
+from . import densenets

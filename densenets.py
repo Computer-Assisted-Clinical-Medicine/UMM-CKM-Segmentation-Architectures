@@ -29,8 +29,8 @@ def conv_layer(
         The kernel size (the same will be used in all dimensions), by default 3
     activation : str, optional
         which activation should be used, by default 'relu'
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     drop_out : tuple, optional
         if dropout should be used, by default (True, 0.2)
     name: str, optional
@@ -105,8 +105,8 @@ def dense_block(
         The kernel size (the same will be used in all dimensions), by default 3
     activation : str, optional
         which activation should be used, by default 'relu'
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     drop_out : tuple, optional
         if dropout should be used, by default (True, 0.2)
     name: str, optional
@@ -158,8 +158,8 @@ def transition_down(
         number of output filters.
     activation : str, optional
         which activation should be used, by default 'relu'
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     drop_out : tuple, optional
         if dropout should be used, by default (True, 0.2)
     name: str, optional
@@ -226,8 +226,8 @@ def transition_up(x, filters: int, size=3, regularizer=None, name="up"):
         number of filters in the output.
     size : int, optional
         The kernel size (the same will be used in all dimensions), by default 3
-    regularize : tuple, optional
-        if there should be regularization, by default (True, 'L2', 0.001)
+    regularizer : tf.keras.regularizers.Regularizer, optional
+        the regularizer to use (or None), by default None
     name: str
         name of the layer
 

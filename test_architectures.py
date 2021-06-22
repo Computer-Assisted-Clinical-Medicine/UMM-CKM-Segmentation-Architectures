@@ -5,7 +5,7 @@ import tensorflow as tf
 import numpy as np
 
 from .deeplab import DeepLabv3plus
-from .densenet import DenseTiramisu
+from .densenets import DenseTiramisu
 
 models = [DeepLabv3plus, DenseTiramisu]
 
