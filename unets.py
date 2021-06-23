@@ -6,8 +6,8 @@ from functools import partial
 import tensorflow as tf
 from tensorflow.keras.layers import Add, Concatenate
 
-import layers
-from utils import get_regularizer, select_final_activation
+from . import layers
+from .utils import get_regularizer, select_final_activation
 
 
 def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
@@ -22,7 +22,6 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     attention U-Nets respectively.
 
     :param input_tensor: input tensorflow tensor/image.
-    :param input_shape: shape of the input tensor.
     :param out_channels: number of classes that needs to be segmented.
     :param loss: loss function as a string
     :param n_filter: a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
