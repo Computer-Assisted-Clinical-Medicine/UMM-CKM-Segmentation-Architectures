@@ -16,7 +16,7 @@ from .utils import get_regularizer, select_final_activation, diagnose_wrapper
 logger = logging.getLogger(__name__)
 
 
-def configure_backbone(name: str, input_tensor: tf.Tensor):
+def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
     """Select the backbone and return it
 
     Parameters
@@ -25,6 +25,9 @@ def configure_backbone(name: str, input_tensor: tf.Tensor):
         The name of the network (currently, resnet50 is implemented)
     input_tensor : tf.Tensor
         The input tensor
+    replace_input : bool, optional
+        If the input and first convolutional layer should be preplaced if the
+        shapes do not match, by default False
 
     Returns
     -------
@@ -47,6 +50,7 @@ def configure_backbone(name: str, input_tensor: tf.Tensor):
         layer_high = "conv4_block6_out"
         # should be with a factor 4 reduced compared to input resolution
         layer_low = "conv2_block3_out"
+        assert input_tensor.shape[-1] != 3, "This backbone only works with 3 input channels."
         backbone = tf.keras.applications.ResNet50(
             include_top=False, input_tensor=input_tensor
         )
