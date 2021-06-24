@@ -120,11 +120,17 @@ def unet_gating_signal(input, batch_normalization, name=None):
 def se_block(in_block, channels, activation, ratio):
     """Adds a channelwise attention to the layer called squeeze and excitation block.
 
-    :param in_block: input feature map
-    :param channels: number of desire output channels, preferrably same as the channels in in_block.
-    :param ratio: ratio to divide the channel number for excitation.
+    in_block : 
+		input feature map
+    channels : 
+		number of desire output channels, preferrably same as the channels in in_block.
+    ratio : 
+		ratio to divide the channel number for excitation.
 
-    :return: scaled input with the se matrix.
+    Returns
+    -------
+    tf.Tensor
+        scaled input with the se matrix.
     """
 
     if tf.rank(in_block).numpy() == 4:
@@ -225,25 +231,14 @@ def spatial_attention(input_feature):
 
 
 def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
-                  act_func, use_bias, batch_normalization, drop_out, regularizer, cross_hair, do_summary=False):
-    '''!
+                  act_func, use_bias, batch_normalization, drop_out, regularizer, cross_hair):
+    '''
     Implements a convolutional layer: convolution + activation
 
     Given an input tensor `x` of shape **TODO**, a filter kernel shape `filter_shape`,
     the number of filters `n_filter`, this function performs the following,
-        - passes `x` through a convolution operation with stride \[1,1\] (See operation.convolution() )
+        - passes `x` through a convolution operation with stride [1,1] (See operation.convolution() )
         - passes `x` through an activation operation (See operation.activation() ) and return
-
-
-    @param net              A Network object.
-    @param x                A Tensor of TODO(shape,type) : Input Tensor to the block.
-    @param filter_shape     A list of ints : [filter_height, filter_width] of spatial filters of the layer.
-    @param n_filter         int : The number of filters of the block.
-    @param drop_out         if True, do dropout
-    @param do_summary       TODO
-    @return A Tensor `x`
-
-    @todo do_summary
     '''
 
     logger.debug('Convolution')
@@ -281,30 +276,31 @@ def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
     return x
 
 def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_rate,
-              act_func, use_bias, regularizer, cross_hair, do_summary=False):
+              act_func, use_bias, regularizer, cross_hair):
     '''!
     Implements a downscale layer: downscale + activation
 
 
-    @param net              A Network object.
-    @param x                A Tensor of TODO(shape,type) : Input Tensor to the block.
-    @param filter_shape     A list of ints : [filter_height, filter_width] of spatial filters of the layer.
-    @param n_filter         int : The number of filters of the block.
-    @param do_summary       TODO
+    net : 
+		A Network object.
+    x : 
+		A Tensor of TODO(shape,type) : Input Tensor to the block.
+    filter_shape : 
+		A list of ints : [filter_height, filter_width] of spatial filters of the layer.
+    n_filter : 
+		int : The number of filters of the block.
     @return A Tensor `x`
 
     This function does the following:
     - perform downscale on `x`
-        - If <tt>net.options['downscale']</tt> is <tt> 'STRIDE' </tt>, `x` is passed through a convolution operation with stride \[2,2\] (See operation.convolution() )
-        - If <tt>net.options['downscale']</tt> is <tt> 'MAX_POOL' </tt>, maxpooling is permformed on `x` using [tf.nn.max_pool](https://www.tensorflow.org/api_docs/python/tf/nn/max_pool) with
-            - @b value : `x`
-            - @b ksize : <tt>[1, 2, 2, 1]</tt>
-            - @b strides: <tt> [1, 2, 2, 1]</tt>
-            - @b padding : <tt>padding=net.options['padding']padding=net.options['padding']</tt>
+        - If downscale is  'STRIDE' , `x` is passed through a convolution operation with stride [2,2] (See operation.convolution() )
+        - If downscale is  'MAX_POOL' , maxpooling is permformed on `x` using [tf.nn.max_pool](https://www.tensorflow.org/api_docs/python/tf/nn/max_pool) with
+            - value : `x`
+            - ksize : [1, 2, 2, 1]
+            - strides:  [1, 2, 2, 1]
+            - padding : padding=net.options['padding']padding=net.options['padding']
 
     - passes `x` through an activation operation (See operation.activation() ) and return
-
-    @todo do_summary
     '''
 
     # ToDo: change between 2D and 3D based on rank of x
@@ -351,32 +347,21 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
     return x
 
 def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
-            act_func, use_bias, regularizer, cross_hair, do_summary=False):
+            act_func, use_bias, regularizer, cross_hair):
     '''!
     Implements a upcale layer: upcale + activation
 
-
-    @param net              A Network object.
-    @param x                A Tensor of TODO(shape,type) : Input Tensor to the block.
-    @param filter_shape     A list of ints : [filter_height, filter_width] of spatial filters of the layer.
-    @param n_filter         int : The number of filters of the block.
-    @param unpool_param      todo
-
-    @return A Tensor `x`
-
     This function does the following:
     - perform downscale on `x`
-        - If <tt>net.options['upscale']</tt> is <tt> 'TRANS_CONV' </tt>, `x` is passed through a transposed convolution operation with stride <tt> [1, 2, 2, 1]</tt> (See operation.transposed_convolution() )
-        - If <tt>net.options['upscale']</tt> is <tt> 'BI_INTER' </tt>, @b TODO
-        - If <tt>net.options['upscale']</tt> is <tt> 'UNPOOL_MAX_IND' </tt>,
-            - @em x is passed through a unpooling at indices operation with
-                -output shape, @em outshape given by <em> unpool_param\[0\]</em> (storing the input shape) and
-                - indices, @em indices given by <em> unpool_param\[1\]</em> (storing  the maxpool indices)
+        - If upscale is  'TRANS_CONV' , `x` is passed through a transposed convolution operation with stride  [1, 2, 2, 1] (See operation.transposed_convolution() )
+        - If 'upscale' is  'UNPOOL_MAX_IND' ,
+            - x is passed through a unpooling at indices operation with
+                -output shape, outshape given by unpool_param[0] (storing the input shape) and
+                - indices, indices given by unpool_param[1] (storing  the maxpool indices)
             of respective maxpooling layer (See operation.unpool_at_indices).
-            - @em x is passed through a convolution operation with @b TODO
     - passes `x` through an activation operation (See operation.activation() ) and return
 
-    @todo do_summary, BI_INTER, unpool_param
+    @todo BI_INTER, unpool_param
     '''
 
     if upscale == 'TRANS_CONV':
@@ -413,23 +398,16 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
     return x
 
 
-def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
-         act_func, use_bias, regularizer, do_summary=False, l2_normalize=False):
+def last(x, filter_shape, n_filter, stride, padding, dilation_rate,
+         act_func, use_bias, regularizer, l2_normalize=False):
     '''!
     Implements a last layer computing logits
 
-
-    @param net              A Network object.
-    @param x                A Tensor of TODO(shape,type) : Input Tensor to the block.
-    @param filter_shape     A list of ints : [filter_height, filter_width] of spatial filters of the layer.
-    @param n_filter         int : The number of filters of the block.
-    @return A Tensor `x`
-
     This function does the following:
         - passes `x` through a convolution operation with stride \[1,1\] (See operation.convolution() )
-        - If <tt>net.options['use_bias']</tt> is <tt> True </tt>, @b todo, (See [ tf.nn.bias_add](https://www.tensorflow.org/api_docs/python/tf/nn/bias_add))
+        - If net.options['use_bias'] is  True , @b todo, (See [ tf.nn.bias_add](https://www.tensorflow.org/api_docs/python/tf/nn/bias_add))
 
-    @todo do_summary, BI_INTER
+    @todo BI_INTER
     '''
 
     logger.debug('Convolution')
@@ -449,8 +427,6 @@ def last(x, outputs, filter_shape, n_filter, stride, padding, dilation_rate,
                                                      padding=padding, dilation_rate=dilation_rate,
                                                      use_bias=use_bias, kernel_regularizer=regularizer)
         x = convolutional_layer(x)
-
-    outputs['logits'] = x
 
     x = activation(act_func)(x)
 

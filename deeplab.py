@@ -50,7 +50,7 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
         layer_high = "conv4_block6_out"
         # should be with a factor 4 reduced compared to input resolution
         layer_low = "conv2_block3_out"
-        assert input_tensor.shape[-1] != 3, "This backbone only works with 3 input channels."
+        assert input_tensor.shape[-1] == 3, "This backbone only works with 3 input channels."
         backbone = tf.keras.applications.ResNet50(
             include_top=False, input_tensor=input_tensor
         )

@@ -21,32 +21,53 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     (SE - https://arxiv.org/abs/1709.01507) are added to the encoder of U-Net or Attention U-Net to obtain CBAM and SE
     attention U-Nets respectively.
 
-    :param input_tensor: input tensorflow tensor/image.
-    :param out_channels: number of classes that needs to be segmented.
-    :param loss: loss function as a string
-    :param n_filter: a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
-    By default: [8, 16, 32, 64, 128].
-    :param filter_shape: shape of all the convolution filter, by default: 3.
-    :param stride: stride for all the conv layers, by default: 1.
-    :param batch_normalization: boolean value, whether to apply batch_norm or not. By default: True.
-    :param use_bias: boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
-    false and vice versa By default: False.
-    :param drop_out: a list containing a boolean, whether to apply dropout to conv layers or not. The number signifies
-    the probability of dropout. By default: [False, 0.2].
-    :param upscale: The strategy to use for upscaling features. By default: 'TRANS_CONV'.
-    :param downscale: The strategy to downscale features. Options: 'MAX_POOL', 'STRIDE'. By default: 'MAX_POOL'.
-    :param regularize: The value for l2 regularization. By default: 0.00001.
-    :param padding: The strategy to pad the features. By default: 'SAME'.
-    :param activation: The activation used after each layer. By default: 'relu'.
-    :param name: The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
-     'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet'. By default: Unet.
-    :param se_layer: boolean, whether to use se block or not.
-    :param cbam: boolean, whether to use CBAM or not.
-    :param ratio: The ratio by which features are reduced in SE or CBAM channel attention.
-    :param dilation_rate: dilation rate for convolutions. By default: 1.
-    :param cross_hair: Boolean, whether to use cross hair convolutions or not. By default: False.
+    Parameters
+    ----------
+    input_tensor : tf.Tensor
+		input tensorflow tensor/image.
+    out_channels : int
+		number of classes that needs to be segmented.
+    loss : str
+		loss function as a string
+    n_filter : tuple, optional
+		a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
+        By default: [8, 16, 32, 64, 128].
+    filter_shape : int
+		shape of all the convolution filter, by default: 3.
+    stride : int
+		stride for all the conv layers, by default: 1.
+    batch_normalization : bool
+		boolean value, whether to apply batch_norm or not. By default: True.
+    use_bias : bool
+		boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
+        false and vice versa By default: False.
+    drop_out : tuple
+		a list containing a boolean, whether to apply dropout to conv layers or not. The number signifies
+        the probability of dropout. By default: [False, 0.2].
+    upscale : str
+		The strategy to use for upscaling features. By default: 'TRANS_CONV'.
+    downscale : str
+		The strategy to downscale features. Options: 'MAX_POOL', 'STRIDE'. By default: 'MAX_POOL'.
+    regularize : tuple
+		The value for l2 regularization. By default: (True, "L2", 0.001).
+    padding : str
+		The strategy to pad the features. By default: 'SAME'.
+    activation : str
+		The activation used after each layer. By default: 'relu'.
+    name : str
+		The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
+        'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet'. By default: Unet.
+    ratio : int
+		The ratio by which features are reduced in SE or CBAM channel attention, by default 1
+    dilation_rate : 1
+		dilation rate for convolutions. By default: 1.
+    cross_hair : bool
+		Boolean, whether to use cross hair convolutions or not. By default: False.
 
-    :return: A model specified in the name argument.
+    Returns
+    -------
+    tf.keras.Model
+        A model specified in the name argument.
     """
 
     available_models = ['Unet', 'SEUnet', 'SEAttnUnet',
@@ -60,7 +81,6 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
         if ratio == 1:
             raise ValueError('For SE or CBAM blocks to work, use ratio higher than 1')
 
-    outputs = {}
     rank = len(input_tensor.shape) - 2
     filter_shape = [filter_shape] * rank
     stride = [stride] * rank
@@ -193,7 +213,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     residual9 = Add()([x9_0, x9_1])
 
     # final output layer
-    logits = layers.last(residual9, outputs, filter_shape=1, n_filter=out_channels,
+    logits = layers.last(residual9, filter_shape=1, n_filter=out_channels,
                          stride=stride, dilation_rate=dilation_rate, padding=padding,
                          act_func=select_final_activation(loss, out_channels),
                          use_bias=False, regularizer=regularizer, l2_normalize=False)
