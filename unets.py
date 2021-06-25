@@ -11,7 +11,7 @@ from .utils import get_regularizer, select_final_activation
 
 
 def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
-         filter_shape=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
+         kernel_dims=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
          upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME', activation='relu',
          name='Unet', ratio=1, dilation_rate=1, cross_hair=False, **kwargs):
     """
@@ -32,7 +32,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     n_filter : tuple, optional
         a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
         By default: [8, 16, 32, 64, 128].
-    filter_shape : int
+    kernel_dims : int
         shape of all the convolution filter, by default: 3.
     stride : int
         stride for all the conv layers, by default: 1.
@@ -82,21 +82,21 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
             raise ValueError('For SE or CBAM blocks to work, use ratio higher than 1')
 
     rank = len(input_tensor.shape) - 2
-    filter_shape = [filter_shape] * rank
+    kernel_dims = [kernel_dims] * rank
     stride = [stride] * rank
 
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    conv = partial(layers.convolutional, filter_shape=filter_shape, stride=stride,
+    conv = partial(layers.convolutional, kernel_dims=kernel_dims, stride=stride,
                    batch_normalization=batch_normalization, drop_out=drop_out,
                    use_bias=use_bias, regularizer=regularizer, padding=padding,
                    act_func=activation, dilation_rate=dilation_rate, cross_hair=cross_hair)
-    downscale = partial(layers.downscale, downscale=downscale, filter_shape=filter_shape,
+    downscale = partial(layers.downscale, downscale=downscale, kernel_dims=kernel_dims,
                         act_func=activation, stride=stride, use_bias=use_bias,
                         regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
                         cross_hair=cross_hair)  # here stride is multiplied by 2 in func to downscale by 2
-    upscale = partial(layers.upscale, upscale=upscale, filter_shape=filter_shape,
+    upscale = partial(layers.upscale, upscale=upscale, kernel_dims=kernel_dims,
                       act_func=activation, stride=stride, use_bias=use_bias,
                       regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
                       cross_hair=cross_hair)  # stride multiplied by 2 in function
@@ -213,7 +213,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     residual9 = Add()([x9_0, x9_1])
 
     # final output layer
-    logits = layers.last(residual9, filter_shape=1, n_filter=out_channels,
+    logits = layers.last(residual9, kernel_dims=1, n_filter=out_channels,
                          stride=stride, dilation_rate=dilation_rate, padding=padding,
                          act_func=select_final_activation(loss, out_channels),
                          use_bias=False, regularizer=regularizer, l2_normalize=False)
