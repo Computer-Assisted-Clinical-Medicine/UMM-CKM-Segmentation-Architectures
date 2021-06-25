@@ -24,45 +24,45 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     Parameters
     ----------
     input_tensor : tf.Tensor
-		input tensorflow tensor/image.
+        input tensorflow tensor/image.
     out_channels : int
-		number of classes that needs to be segmented.
+        number of classes that needs to be segmented.
     loss : str
-		loss function as a string
+        loss function as a string
     n_filter : tuple, optional
-		a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
+        a list containing number of filters for conv layers (encoder block: 1 to 5, decoder block: 4 to 1)
         By default: [8, 16, 32, 64, 128].
     filter_shape : int
-		shape of all the convolution filter, by default: 3.
+        shape of all the convolution filter, by default: 3.
     stride : int
-		stride for all the conv layers, by default: 1.
+        stride for all the conv layers, by default: 1.
     batch_normalization : bool
-		boolean value, whether to apply batch_norm or not. By default: True.
+        boolean value, whether to apply batch_norm or not. By default: True.
     use_bias : bool
-		boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
+        boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
         false and vice versa By default: False.
     drop_out : tuple
-		a list containing a boolean, whether to apply dropout to conv layers or not. The number signifies
+        a list containing a boolean, whether to apply dropout to conv layers or not. The number signifies
         the probability of dropout. By default: [False, 0.2].
     upscale : str
-		The strategy to use for upscaling features. By default: 'TRANS_CONV'.
+        The strategy to use for upscaling features. By default: 'TRANS_CONV'.
     downscale : str
-		The strategy to downscale features. Options: 'MAX_POOL', 'STRIDE'. By default: 'MAX_POOL'.
+        The strategy to downscale features. Options: 'MAX_POOL', 'STRIDE'. By default: 'MAX_POOL'.
     regularize : tuple
-		The value for l2 regularization. By default: (True, "L2", 0.001).
+        The value for l2 regularization. By default: (True, "L2", 0.001).
     padding : str
-		The strategy to pad the features. By default: 'SAME'.
+        The strategy to pad the features. By default: 'SAME'.
     activation : str
-		The activation used after each layer. By default: 'relu'.
+        The activation used after each layer. By default: 'relu'.
     name : str
-		The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
+        The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
         'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet'. By default: Unet.
     ratio : int
-		The ratio by which features are reduced in SE or CBAM channel attention, by default 1
+        The ratio by which features are reduced in SE or CBAM channel attention, by default 1
     dilation_rate : 1
-		dilation rate for convolutions. By default: 1.
+        dilation rate for convolutions. By default: 1.
     cross_hair : bool
-		Boolean, whether to use cross hair convolutions or not. By default: False.
+        Boolean, whether to use cross hair convolutions or not. By default: False.
 
     Returns
     -------
