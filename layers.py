@@ -33,7 +33,7 @@ def expend_as(tensor, rep, axis, name=None):
     return my_repeat
 
 
-def attn_gating_block(x, g, inter_shape, use_bias, batch_normalization, name=None):
+def attn_gating_block(x, g, inter_shape, use_bias, batch_normalization, name=None, **kwargs):
     """ take g which is the spatially smaller signal, do a conv to get the same
     number of feature channels as x (bigger spatially)
     do a conv on x to also get same feature channels (theta_x)
@@ -98,18 +98,18 @@ def attn_gating_block(x, g, inter_shape, use_bias, batch_normalization, name=Non
     return result
 
 
-def unet_gating_signal(input, batch_normalization, name=None):
+def unet_gating_signal(x, batch_normalization, name=None):
     """ this is simply 1x1 convolution, bn, activation used for calculating gating signal for attention block. """
 
-    shape = K.int_shape(input)
-    if tf.rank(input).numpy() == 4:
-        x = tf.keras.layers.Conv2D(shape[3] * 1, (1, 1), strides=(1, 1), padding="same"# , kernel_initializer=kinit
+    shape = K.int_shape(x)
+    if tf.rank(x).numpy() == 4:
+        x = tf.keras.layers.Conv2D(shape[3] * 1, (1, 1), strides=(1, 1), padding="same"
                                    # , name=name + '_conv'
-                                   )(input)
-    elif tf.rank(input).numpy() == 5:
-        x = tf.keras.layers.Conv3D(shape[4] * 1, (1, 1, 1), strides=(1, 1, 1), padding="same"# , kernel_initializer=kinit
+                                   )(x)
+    elif tf.rank(x).numpy() == 5:
+        x = tf.keras.layers.Conv3D(shape[4] * 1, (1, 1, 1), strides=(1, 1, 1), padding="same"
                                    # , name=name + '_conv'
-                                   )(input)
+                                   )(x)
     if batch_normalization:
         x = tf.keras.layers.BatchNormalization()(x)  # name=name + '_bn')(x)
     x = Activation('relu')(x)  # , name=name + '_act')(x)
@@ -117,13 +117,13 @@ def unet_gating_signal(input, batch_normalization, name=None):
     return x
 
 
-def se_block(in_block, channels, activation, ratio):
+def se_block(in_block, n_filter, act_func, ratio, **kwargs):
     """Adds a channelwise attention to the layer called squeeze and excitation block.
 
     in_block : 
 		input feature map
-    channels : 
-		number of desire output channels, preferrably same as the channels in in_block.
+    n_filter : 
+		number of desire output n_filter, preferrably same as the channels in in_block.
     ratio : 
 		ratio to divide the channel number for excitation.
 
@@ -135,19 +135,19 @@ def se_block(in_block, channels, activation, ratio):
 
     if tf.rank(in_block).numpy() == 4:
         x = tf.keras.layers.GlobalAveragePooling2D()(in_block)
-        x = tf.keras.layers.Dense(channels // ratio, activation=activation)(x)
-        x = tf.keras.layers.Dense(channels, activation='sigmoid')(x)
+        x = tf.keras.layers.Dense(n_filter // ratio, activation=act_func)(x)
+        x = tf.keras.layers.Dense(n_filter, activation='sigmoid')(x)
     else:
         # x = tf.keras.layers.GlobalAveragePooling3D()(in_block)
         num_slices = in_block.shape[1]
         x = tfa.layers.AdaptiveAveragePooling3D((num_slices, 1, 1))(in_block)
-        x = tf.keras.layers.Dense(channels // ratio, activation=activation)(x)
-        x = tf.keras.layers.Dense(channels, activation='sigmoid')(x)
+        x = tf.keras.layers.Dense(n_filter // ratio, activation=act_func)(x)
+        x = tf.keras.layers.Dense(n_filter, activation='sigmoid')(x)
 
     return multiply([in_block, x])
 
 
-def cbam_block(cbam_feature, ratio=4):
+def cbam_block(cbam_feature, ratio=4, **kwargs):
     """Contains the implementation of Convolutional Block Attention Module(CBAM) block.
     As described in https://arxiv.org/abs/1807.06521.
     """
@@ -404,7 +404,7 @@ def last(x, kernel_dims, n_filter, stride, padding, dilation_rate,
     Implements a last layer computing logits
 
     This function does the following:
-        - passes `x` through a convolution operation with stride \[1,1\] (See operation.convolution() )
+        - passes `x` through a convolution operation with stride [1,1] (See operation.convolution() )
         - If net.options['use_bias'] is  True , @b todo, (See [ tf.nn.bias_add](https://www.tensorflow.org/api_docs/python/tf/nn/bias_add))
 
     @todo BI_INTER
