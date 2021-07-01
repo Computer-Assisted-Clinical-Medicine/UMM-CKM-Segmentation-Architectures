@@ -230,7 +230,7 @@ def spatial_attention(input_feature):
     return multiply([input_feature, cbam_feature])
 
 
-def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
+def convolutional(x, kernel_dims, n_filter, stride, padding, dilation_rate,
                   act_func, use_bias, batch_normalization, drop_out, regularizer, cross_hair):
     '''
     Implements a convolutional layer: convolution + activation
@@ -245,15 +245,15 @@ def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
     logger.debug('Input: %s', x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        logger.debug('Kernel: %s', filter_shape)
-        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape, strides=stride,
+        logger.debug('Kernel: %s', kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
                                                      padding=padding,
                                                      dilation_rate=dilation_rate, use_bias=use_bias,
                                                      kernel_regularizer=regularizer)
         x = convolutional_layer(x)
     elif tf.rank(x).numpy() == 5:
-        logger.debug('Kernel: %s', filter_shape)
-        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape, strides=stride,
+        logger.debug('Kernel: %s', kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
                                                          padding=padding,
                                                          dilation_rate=dilation_rate,
                                                          use_bias=use_bias, kernel_regularizer=regularizer)
@@ -275,7 +275,7 @@ def convolutional(x, filter_shape, n_filter, stride, padding, dilation_rate,
 
     return x
 
-def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_rate,
+def downscale(x, downscale, kernel_dims, n_filter, stride, padding, dilation_rate,
               act_func, use_bias, regularizer, cross_hair):
     '''!
     Implements a downscale layer: downscale + activation
@@ -285,7 +285,7 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
 		A Network object.
     x : 
 		A Tensor of TODO(shape,type) : Input Tensor to the block.
-    filter_shape : 
+    kernel_dims : 
 		A list of ints : [filter_height, filter_width] of spatial filters of the layer.
     n_filter : 
 		int : The number of filters of the block.
@@ -308,14 +308,14 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
         logger.debug('Convolution with Stride')
         logger.debug('Input: %s', x.shape.as_list())
         if tf.rank(x).numpy() == 4:
-            logger.debug('Kernel: %s,Stride: %s', filter_shape, np.multiply(stride, 2))
-            convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape,
+            logger.debug('Kernel: %s,Stride: %s', kernel_dims, np.multiply(stride, 2))
+            convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims,
                                                          strides=np.multiply(stride, 2),
                                                          padding=padding, dilation_rate=dilation_rate,
                                                          use_bias=use_bias, kernel_regularizer=regularizer)
         elif tf.rank(x).numpy() == 5:
-            logger.debug('Kernel: %s,Stride: %s', filter_shape, np.multiply(stride, 2))
-            convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape,
+            logger.debug('Kernel: %s,Stride: %s', kernel_dims, np.multiply(stride, 2))
+            convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims,
                                                          strides=np.multiply(stride, 2),
                                                          padding=padding, dilation_rate=dilation_rate,
                                                          use_bias=use_bias, kernel_regularizer=regularizer)
@@ -346,7 +346,7 @@ def downscale(x, downscale, filter_shape, n_filter, stride, padding, dilation_ra
 
     return x
 
-def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
+def upscale(x, upscale, kernel_dims, n_filter, stride, padding, dilation_rate,
             act_func, use_bias, regularizer, cross_hair):
     '''!
     Implements a upcale layer: upcale + activation
@@ -369,18 +369,18 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
         strides = np.multiply(stride, 2)
 
         logger.debug('Transposed Convolution')
-        logger.debug('Kernel: %s Stride: %s', filter_shape, strides)
+        logger.debug('Kernel: %s Stride: %s', kernel_dims, strides)
         logger.debug('Input: %s', x.shape.as_list())
 
         if tf.rank(x).numpy() == 4:
-            convolutional_layer = tf.keras.layers.Conv2DTranspose(filters=n_filter, kernel_size=filter_shape,
+            convolutional_layer = tf.keras.layers.Conv2DTranspose(filters=n_filter, kernel_size=kernel_dims,
                                                                   strides=strides, padding=padding,
                                                                   dilation_rate=dilation_rate,
                                                                   use_bias=use_bias, kernel_regularizer=regularizer)
             x = convolutional_layer(x)
         elif tf.rank(x).numpy() == 5:
 
-            convolutional_layer = tf.keras.layers.Conv3DTranspose(filters=n_filter, kernel_size=filter_shape,
+            convolutional_layer = tf.keras.layers.Conv3DTranspose(filters=n_filter, kernel_size=kernel_dims,
                                                                   strides=strides, padding=padding,
                                                                   dilation_rate=dilation_rate,
                                                                   use_bias=use_bias, kernel_regularizer=regularizer)
@@ -398,7 +398,7 @@ def upscale(x, upscale, filter_shape, n_filter, stride, padding, dilation_rate,
     return x
 
 
-def last(x, filter_shape, n_filter, stride, padding, dilation_rate,
+def last(x, kernel_dims, n_filter, stride, padding, dilation_rate,
          act_func, use_bias, regularizer, l2_normalize=False):
     '''!
     Implements a last layer computing logits
@@ -414,16 +414,16 @@ def last(x, filter_shape, n_filter, stride, padding, dilation_rate,
     logger.debug('Input: %s', x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        logger.debug('Kernel: %s', filter_shape)
-        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=filter_shape, strides=stride,
+        logger.debug('Kernel: %s', kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
                                                      padding=padding, dilation_rate=dilation_rate,
                                                      use_bias=use_bias, kernel_regularizer=regularizer)
         x = convolutional_layer(x)
 
     elif tf.rank(x).numpy() == 5:
 
-        logger.debug('Kernel: %s', filter_shape)
-        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=filter_shape, strides=stride,
+        logger.debug('Kernel: %s', kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
                                                      padding=padding, dilation_rate=dilation_rate,
                                                      use_bias=use_bias, kernel_regularizer=regularizer)
         x = convolutional_layer(x)
