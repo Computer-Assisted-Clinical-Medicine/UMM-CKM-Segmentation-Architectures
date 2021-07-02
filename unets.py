@@ -10,8 +10,9 @@ from tensorflow.keras.layers import Add, Concatenate
 from . import layers
 from .utils import get_regularizer, select_final_activation
 
-def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:Optional[Callable],
-    res_connect:bool, res_connect_type="skip_first")->tf.Tensor:
+
+def conv_block(x: tf.Tensor, n_conv: int, conv: Callable, n_filter: int, attention: Optional[Callable],
+               res_connect: bool, res_connect_type="skip_first") -> tf.Tensor:
     """Convolutional block performing attention and residual connections if
     specified
 
@@ -22,7 +23,7 @@ def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:O
     n_conv : int
         How many convolutions should be performed
     conv : Callable
-        The function performin the convolutions, should take x and n_filter as arguments
+        The function performing the convolutions, should take x and n_filter as arguments
     n_filter : int
         The number of filters
     attention : Callable
@@ -66,20 +67,22 @@ def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:O
             x = Add()([x, x_input_conv])
     return x
 
+
 def encoder_block(x, conv, attention, downscale, n_conv, n_filter, res_connect, res_connect_type):
     """
     Encoder block, does n_conv convolutions (using the conv function) with
-    attention if attention is not none. If res_connect, everythong before the
+    attention if attention is not none. If res_connect, everything before the
     downscale is wrapped into a residual connection
     """
     x_before_downscale = conv_block(x, n_conv, conv, n_filter, attention, res_connect, res_connect_type)
     x = downscale(x_before_downscale, n_filter=n_filter)
     return x, x_before_downscale
 
+
 def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_filter, res_connect, res_connect_type):
     """
     Decoder block, does n_conv convolutions (using the conv function) with
-    attention if attention is not none. If res_connect, everythong after the
+    attention if attention is not none. If res_connect, everything after the
     upscale is wrapped into a residual connection. If x_skip is not none, it is
     concatenated (with attention if not none) with x.
     """
@@ -99,10 +102,10 @@ def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_fi
 
 
 def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
-    n_convolutions=(2, 2, 3, 3, 3), kernel_dims=3, stride=1, batch_normalization=True, use_bias=False,
-    drop_out=(False, 0.2), upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001),
-    padding='SAME', activation='relu', name='Unet', ratio=1, dilation_rate=1, cross_hair=False,
-    res_connect=True, res_connect_type="skip_first", skip_connect=True, **kwargs)->tf.keras.Model:
+         n_convolutions=(2, 2, 3, 3, 3), kernel_dims=3, stride=1, batch_normalization=True, use_bias=False,
+         drop_out=(False, 0.2), upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001),
+         padding='SAME', activation='relu', name='Unet', ratio=1, dilation_rate=1, cross_hair=False,
+         res_connect=True, res_connect_type="skip_first", skip_connect=True, **kwargs) -> tf.keras.Model:
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
@@ -278,10 +281,12 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)
 
+
 def unet_old(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
-         kernel_dims=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
-         upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME', activation='relu',
-         name='Unet', ratio=1, dilation_rate=1, cross_hair=False, **kwargs):
+             kernel_dims=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
+             upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME',
+             activation='relu',
+             name='Unet', ratio=1, dilation_rate=1, cross_hair=False, **kwargs):
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
