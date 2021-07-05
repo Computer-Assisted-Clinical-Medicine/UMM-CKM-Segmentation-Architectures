@@ -12,8 +12,7 @@ from .utils import get_regularizer, select_final_activation
 
 def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:Optional[Callable],
     res_connect:bool, res_connect_type="skip_first")->tf.Tensor:
-    """Convolutional block performing attention and residual connections if
-    specified
+    """Convolutional block performing attention and residual connections if specified.
 
     Parameters
     ----------
@@ -22,7 +21,7 @@ def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:O
     n_conv : int
         How many convolutions should be performed
     conv : Callable
-        The function performin the convolutions, should take x and n_filter as arguments
+        The function performing the convolutions, should take x and n_filter as arguments
     n_filter : int
         The number of filters
     attention : Callable
@@ -67,10 +66,35 @@ def conv_block(x:tf.Tensor, n_conv:int, conv:Callable, n_filter:int, attention:O
     return x
 
 def encoder_block(x, conv, attention, downscale, n_conv, n_filter, res_connect, res_connect_type):
-    """
-    Encoder block, does n_conv convolutions (using the conv function) with
-    attention if attention is not none. If res_connect, everythong before the
-    downscale is wrapped into a residual connection
+    """Encoder block with n_conv convolutional layers followed by downsampling.
+    The conv block uses attention and residual connections if specified.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        The input
+    conv : Callable
+        The function performing the convolutions, should take x and n_filter as arguments
+    attention : Callable
+        The attention function, should take x and n_filter as arguments
+    downscale : Callable
+        The downscale function, should take x and n_filter as arguments
+    n_conv : int
+        How many convolutions should be performed
+    n_filter : int
+        The number of filters
+    res_connect : bool
+        If residual connections should be used
+    res_connect_type : str, optional
+        What should be done if there is a depth-missmatch, by default "skip_first"
+        The options are:
+        - skip_first : the first convolutional layer will not be included in the res-block
+        - 1x1conv : a 1x1 convolution is used to increase the number of channels
+
+    Returns
+    -------
+    tf.Tensor
+        The output tensor
     """
     x_before_downscale = conv_block(x, n_conv, conv, n_filter, attention, res_connect, res_connect_type)
     x = downscale(x_before_downscale, n_filter=n_filter)
@@ -82,6 +106,37 @@ def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_fi
     attention if attention is not none. If res_connect, everythong after the
     upscale is wrapped into a residual connection. If x_skip is not none, it is
     concatenated (with attention if not none) with x.
+
+    Parameters
+    ----------
+    x : tf.Tensor
+        The input
+    x_skip : tf.Tensor
+        The input from the skip connection
+    conv : Callable
+        The function performing the convolutions, should take x and n_filter as arguments
+    upscale : Callable
+        The downscale function, should take x and n_filter as arguments
+    attention : Callable
+        The attention function, should take x and n_filter as arguments
+    gate_signal : Callable
+        The gate_signal function, should take x as argument
+    n_conv : int
+        How many convolutions should be performed
+    n_filter : int
+        The number of filters
+    res_connect : bool
+        If residual connections should be used
+    res_connect_type : str, optional
+        What should be done if there is a depth-missmatch, by default "skip_first"
+        The options are:
+        - skip_first : the first convolutional layer will not be included in the res-block
+        - 1x1conv : a 1x1 convolution is used to increase the number of channels
+
+    Returns
+    -------
+    tf.Tensor
+        The output tensor
     """
     x_before_upscale = x
     x = upscale(x, n_filter=n_filter)
@@ -172,6 +227,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
         A model specified in the name argument.
     """
 
+    # TODO: make two new parameters, attention or not in decode and encdoe attention
     available_models = ['Unet', 'SEUnet', 'SEAttnUnet',
                         'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet']
     se_models = ['SEUnet', 'SEAttnUnet']
