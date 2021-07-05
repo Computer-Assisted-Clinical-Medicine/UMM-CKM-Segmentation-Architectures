@@ -1,137 +1,185 @@
+"""This module contains multiple layers, which are mostly used the UNets.
+"""
 import logging
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import backend as K
-from tensorflow.keras.layers import (Activation, Add, Concatenate, Conv2D,
-                                     Dense, GlobalAveragePooling2D,
-                                     GlobalMaxPooling2D, Lambda, Permute,
-                                     Reshape, add, multiply)
+from tensorflow.keras.layers import (
+    Activation,
+    Add,
+    Concatenate,
+    Conv2D,
+    Dense,
+    GlobalAveragePooling2D,
+    GlobalMaxPooling2D,
+    Lambda,
+    Permute,
+    Reshape,
+    add,
+    multiply,
+)
 
 # configure logger
 logger = logging.getLogger(__name__)
 
 
-def activation(act_func):
+def activation(act_func: str) -> tf.keras.layers.Layer:
+    """This function takes the name of the activation function and returns the
+    corresponding Layer
+
+    Parameters
+    ----------
+    act_func : str
+        The function name it can be:
+        - a keras activation (like relu, elu)
+        - swish
+        - elu
+
+    Returns
+    -------
+    layer
+        The layer
+    """
     if act_func in tf.keras.activations.__dict__:
         return tf.keras.layers.Activation(act_func)
-    elif act_func == 'leaky_relu':
+    elif act_func == "leaky_relu":
         return tf.keras.layers.LeakyReLU()
-    elif act_func == 'swish':
+    elif act_func == "swish":
         return swish
-    elif act_func == 'elu':
+    elif act_func == "elu":
         return tf.keras.layers.ELU()
+    else:
+        raise ValueError(f"Activation function {act_func} unknown.")
 
 
-def swish(x, beta=1):
+def swish(x, beta=1) -> tf.keras.layers.Layer:
     return tf.keras.layers.Multiply(x, tf.keras.activations.sigmoid(beta * x))
 
 
-def expend_as(tensor, rep, axis, name=None):
-    my_repeat = Lambda(lambda x, repnum: K.repeat_elements(x, repnum, axis=axis), arguments={'repnum': rep}, name=name)(
-        tensor)
-    # name='psi_up' + name)(tensor)
+def expend_as(tensor: tf.Tensor, rep: int, axis: int, name=None) -> tf.keras.layers.Layer:
+    return Lambda(
+        lambda x, repnum: K.repeat_elements(x, repnum, axis=axis),
+        arguments={"repnum": rep},
+        name=name,
+    )(tensor)
 
-    return my_repeat
 
-
-def attn_gating_block(x, g, inter_shape, use_bias, batch_normalization, name=None, **kwargs):
-    """ take g which is the spatially smaller signal, do a conv to get the same
+def attn_gating_block(
+    x: tf.Tensor,
+    gate: tf.Tensor,
+    inter_shape: int,
+    use_bias: bool,
+    batch_normalization: bool,
+    name=None,
+    **kwargs,
+) -> tf.Tensor:
+    """take g which is the spatially smaller signal, do a conv to get the same
     number of feature channels as x (bigger spatially)
     do a conv on x to also get same feature channels (theta_x)
     then, upsample g to be same size as x
     add x and g (concat_xg)
-    relu, 1x1 conv, then sigmoid then upsample the final - this gives us attn coefficients """
+    relu, 1x1 conv, then sigmoid then upsample the final - this gives us attn coefficients"""
 
-    shape_x = K.int_shape(x)  # 32
-    shape_g = K.int_shape(g)  # 16
+    shape_x = K.int_shape(x)
+    shape_g = K.int_shape(gate)
 
     if tf.rank(x).numpy() == 4:
-        theta_x = tf.keras.layers.Conv2D(inter_shape, (2, 2), strides=(2, 2), padding='same', use_bias=use_bias)(x)
-        # name='xl' + name)(x)  # 16
+        theta_x = tf.keras.layers.Conv2D(
+            inter_shape, (2, 2), strides=(2, 2), padding="same", use_bias=use_bias
+        )(x)
         shape_theta_x = K.int_shape(theta_x)
-        phi_g = tf.keras.layers.Conv2D(inter_shape, (1, 1), padding='same')(g)
-        upsample_g = tf.keras.layers.Conv2DTranspose(inter_shape, (3, 3),
-                                                     strides=(
-                                                         shape_theta_x[1] // shape_g[1],
-                                                         shape_theta_x[2] // shape_g[2]),
-                                                     padding='same', use_bias=use_bias)(
-            phi_g)  # , name='g_up' + name)(phi_g)  # 16
-        # upsample_g = tf.keras.layers.UpSampling2D((shape_theta_x[1] // shape_g[1], shape_theta_x[2] // shape_g[2]),
-        #                                              interpolation='bilinear')(phi_g)  # , name='g_up' + name)(phi_g)  # 16
+        phi_g = tf.keras.layers.Conv2D(inter_shape, (1, 1), padding="same")(gate)
+        upsample_g = tf.keras.layers.Conv2DTranspose(
+            inter_shape,
+            (3, 3),
+            strides=(shape_theta_x[1] // shape_g[1], shape_theta_x[2] // shape_g[2]),
+            padding="same",
+            use_bias=use_bias,
+        )(phi_g)
         concat_xg = add([upsample_g, theta_x])
-        act_xg = Activation('relu')(concat_xg)
-        psi = tf.keras.layers.Conv2D(1, (1, 1), padding='same', use_bias=use_bias)(
-            act_xg)  # , name='psi' + name)(act_xg)
-        sigmoid_xg = Activation('sigmoid')(psi)
+        act_xg = Activation("relu")(concat_xg)
+        psi = tf.keras.layers.Conv2D(1, (1, 1), padding="same", use_bias=use_bias)(act_xg)
+        sigmoid_xg = Activation("sigmoid")(psi)
         shape_sigmoid = K.int_shape(sigmoid_xg)
         upsample_psi = tf.keras.layers.UpSampling2D(
-            size=(shape_x[1] // shape_sigmoid[1], shape_x[2] // shape_sigmoid[2]))(sigmoid_xg)  # 32
+            size=(shape_x[1] // shape_sigmoid[1], shape_x[2] // shape_sigmoid[2])
+        )(sigmoid_xg)
         upsample_psi = expend_as(upsample_psi, shape_x[3], axis=3)
-        y = multiply([upsample_psi, x])  # , name='q_attn' + name)
-        result = tf.keras.layers.Conv2D(shape_x[3], (1, 1), padding='same')(y)  # , name='q_attn_conv' + name)(y)
+        y = multiply([upsample_psi, x])
+        result = tf.keras.layers.Conv2D(shape_x[3], (1, 1), padding="same")(y)
 
     elif tf.rank(x).numpy() == 5:
-        theta_x = tf.keras.layers.Conv3D(inter_shape, (2, 2, 2), strides=(2, 2, 2), padding='same', use_bias=use_bias)(
-            x)
-        # name='xl' + name)(x)  # 16
+        theta_x = tf.keras.layers.Conv3D(
+            inter_shape, (2, 2, 2), strides=(2, 2, 2), padding="same", use_bias=use_bias
+        )(x)
         shape_theta_x = K.int_shape(theta_x)
-        phi_g = tf.keras.layers.Conv3D(inter_shape, (1, 1, 1), padding='same')(g)
-        upsample_g = tf.keras.layers.Conv3DTranspose(inter_shape, (3, 3, 3),
-                                                     strides=(
-                                                         shape_theta_x[1] // shape_g[1],
-                                                         shape_theta_x[2] // shape_g[2],
-                                                         shape_theta_x[3] // shape_g[3]),
-                                                     padding='same', use_bias=use_bias)(
-            phi_g)  # , name='g_up' + name)(phi_g)  # 16
+        phi_g = tf.keras.layers.Conv3D(inter_shape, (1, 1, 1), padding="same")(gate)
+        upsample_g = tf.keras.layers.Conv3DTranspose(
+            inter_shape,
+            (3, 3, 3),
+            strides=(
+                shape_theta_x[1] // shape_g[1],
+                shape_theta_x[2] // shape_g[2],
+                shape_theta_x[3] // shape_g[3],
+            ),
+            padding="same",
+            use_bias=use_bias,
+        )(phi_g)
         concat_xg = add([upsample_g, theta_x])
-        act_xg = Activation('relu')(concat_xg)
-        psi = tf.keras.layers.Conv3D(1, (1, 1, 1), padding='same', use_bias=use_bias)(
-            act_xg)  # , name='psi' + name)(act_xg)
-        sigmoid_xg = Activation('sigmoid')(psi)
+        act_xg = Activation("relu")(concat_xg)
+        psi = tf.keras.layers.Conv3D(1, (1, 1, 1), padding="same", use_bias=use_bias)(
+            act_xg
+        )
+        sigmoid_xg = Activation("sigmoid")(psi)
         shape_sigmoid = K.int_shape(sigmoid_xg)
         upsample_psi = tf.keras.layers.UpSampling3D(
-            size=(shape_x[1] // shape_sigmoid[1], shape_x[2] // shape_sigmoid[2], shape_x[3] // shape_sigmoid[3])) \
-            (sigmoid_xg)  # 32
+            size=(
+                shape_x[1] // shape_sigmoid[1],
+                shape_x[2] // shape_sigmoid[2],
+                shape_x[3] // shape_sigmoid[3],
+            )
+        )(sigmoid_xg)
         upsample_psi = expend_as(upsample_psi, shape_x[4], axis=4)
-        y = multiply([upsample_psi, x])  # , name='q_attn' + name)
-        result = tf.keras.layers.Conv3D(shape_x[4], (1, 1, 1), padding='same')(y)  # , name='q_attn_conv' + name)(y)
+        y = multiply([upsample_psi, x])
+        result = tf.keras.layers.Conv3D(shape_x[4], (1, 1, 1), padding="same")(y)
 
     if batch_normalization:
-        result = tf.keras.layers.BatchNormalization()(result)  # name='q_attn_bn' + name)(result)
+        result = tf.keras.layers.BatchNormalization()(result)
 
     return result
 
 
-def unet_gating_signal(x, batch_normalization, name=None):
-    """ this is simply 1x1 convolution, bn, activation used for calculating gating signal for attention block. """
+def unet_gating_signal(x: tf.Tensor, batch_normalization: bool, name=None) -> tf.Tensor:
+    """this is simply 1x1 convolution, bn, activation used for calculating gating signal for attention block."""
 
     shape = K.int_shape(x)
     if tf.rank(x).numpy() == 4:
-        x = tf.keras.layers.Conv2D(shape[3] * 1, (1, 1), strides=(1, 1), padding="same"
-                                   # , name=name + '_conv'
-                                   )(x)
+        x = tf.keras.layers.Conv2D(shape[3] * 1, (1, 1), strides=(1, 1), padding="same")(x)
     elif tf.rank(x).numpy() == 5:
-        x = tf.keras.layers.Conv3D(shape[4] * 1, (1, 1, 1), strides=(1, 1, 1), padding="same"
-                                   # , name=name + '_conv'
-                                   )(x)
+        x = tf.keras.layers.Conv3D(
+            shape[4] * 1, (1, 1, 1), strides=(1, 1, 1), padding="same"
+        )(x)
     if batch_normalization:
-        x = tf.keras.layers.BatchNormalization()(x)  # name=name + '_bn')(x)
-    x = Activation('relu')(x)  # , name=name + '_act')(x)
+        x = tf.keras.layers.BatchNormalization()(x)
+    x = Activation("relu")(x)
 
     return x
 
 
-def se_block(in_block, n_filter, act_func, ratio, **kwargs):
+def se_block(
+    in_block: tf.Tensor, n_filter: int, act_func: str, ratio: float, **kwargs
+) -> tf.Tensor:
     """Adds a channelwise attention to the layer called squeeze and excitation block.
 
-    in_block : 
-		input feature map
-    n_filter : 
-		number of desire output n_filter, preferrably same as the channels in in_block.
-    ratio : 
-		ratio to divide the channel number for excitation.
+    in_block :
+        input feature map
+    n_filter :
+        number of desire output n_filter, preferrably same as the channels in in_block.
+    ratio :
+        ratio to divide the channel number for excitation.
 
     Returns
     -------
@@ -142,18 +190,18 @@ def se_block(in_block, n_filter, act_func, ratio, **kwargs):
     if tf.rank(in_block).numpy() == 4:
         x = tf.keras.layers.GlobalAveragePooling2D()(in_block)
         x = tf.keras.layers.Dense(n_filter // ratio, activation=act_func)(x)
-        x = tf.keras.layers.Dense(n_filter, activation='sigmoid')(x)
+        x = tf.keras.layers.Dense(n_filter, activation="sigmoid")(x)
     else:
         # x = tf.keras.layers.GlobalAveragePooling3D()(in_block)
         num_slices = in_block.shape[1]
         x = tfa.layers.AdaptiveAveragePooling3D((num_slices, 1, 1))(in_block)
         x = tf.keras.layers.Dense(n_filter // ratio, activation=act_func)(x)
-        x = tf.keras.layers.Dense(n_filter, activation='sigmoid')(x)
+        x = tf.keras.layers.Dense(n_filter, activation="sigmoid")(x)
 
     return multiply([in_block, x])
 
 
-def cbam_block(cbam_feature, ratio=4, **kwargs):
+def cbam_block(cbam_feature: tf.Tensor, ratio=4, **kwargs) -> tf.Tensor:
     """Contains the implementation of Convolutional Block Attention Module(CBAM) block.
     As described in https://arxiv.org/abs/1807.06521.
     """
@@ -163,22 +211,24 @@ def cbam_block(cbam_feature, ratio=4, **kwargs):
     return cbam_feature
 
 
-def channel_attention(input_feature, ratio=8):
+def channel_attention(input_feature: tf.Tensor, ratio=8) -> tf.Tensor:
     """part of cbam attention module"""
 
     channel_axis = 1 if K.image_data_format() == "channels_first" else -1
     # channel = input_feature._keras_shape[channel_axis]
     channel = input_feature.shape[channel_axis]
 
-    shared_layer_one = Dense(channel // ratio,
-                             activation='elu',  # try elu afterwards
-                             # kernel_initializer='he_normal',
-                             use_bias=False,
-                             bias_initializer='zeros')
-    shared_layer_two = Dense(channel,
-                             # kernel_initializer='he_normal',
-                             use_bias=False,
-                             bias_initializer='zeros')
+    shared_layer_one = Dense(
+        channel // ratio,
+        activation="elu",  # try elu afterwards
+        use_bias=False,
+        bias_initializer="zeros",
+    )
+    shared_layer_two = Dense(
+        channel,
+        use_bias=False,
+        bias_initializer="zeros",
+    )
 
     avg_pool = GlobalAveragePooling2D()(input_feature)
     avg_pool = Reshape((1, 1, channel))(avg_pool)
@@ -197,7 +247,7 @@ def channel_attention(input_feature, ratio=8):
     assert max_pool.shape[1:] == (1, 1, channel)
 
     cbam_feature = Add()([avg_pool, max_pool])
-    cbam_feature = Activation('sigmoid')(cbam_feature)
+    cbam_feature = Activation("sigmoid")(cbam_feature)
 
     if K.image_data_format() == "channels_first":
         cbam_feature = Permute((3, 1, 2))(cbam_feature)
@@ -205,7 +255,7 @@ def channel_attention(input_feature, ratio=8):
     return multiply([input_feature, cbam_feature])
 
 
-def spatial_attention(input_feature):
+def spatial_attention(input_feature: tf.Tensor) -> tf.Tensor:
     """part of cbam attention module"""
 
     kernel_size = 5
@@ -221,13 +271,14 @@ def spatial_attention(input_feature):
     assert max_pool.shape[-1] == 1
     concat = Concatenate(axis=3)([avg_pool, max_pool])
     assert concat.shape[-1] == 2
-    cbam_feature = Conv2D(filters=1,
-                          kernel_size=kernel_size,
-                          strides=1,
-                          padding='same',
-                          activation='sigmoid',
-                          # kernel_initializer='he_normal',
-                          use_bias=False)(concat)
+    cbam_feature = Conv2D(
+        filters=1,
+        kernel_size=kernel_size,
+        strides=1,
+        padding="same",
+        activation="sigmoid",
+        use_bias=False,
+    )(concat)
     assert cbam_feature.shape[-1] == 1
 
     if K.image_data_format() == "channels_first":
@@ -236,8 +287,20 @@ def spatial_attention(input_feature):
     return multiply([input_feature, cbam_feature])
 
 
-def convolutional(x, kernel_dims, n_filter, stride, padding, dilation_rate,
-                  act_func, use_bias, batch_normalization, drop_out, regularizer, cross_hair):
+def convolutional(
+    x: tf.Tensor,
+    kernel_dims: Union[int, Tuple],
+    n_filter: int,
+    stride: Tuple,
+    padding: str,
+    dilation_rate: Union[int, Tuple],
+    act_func: str,
+    use_bias: bool,
+    batch_normalization: bool,
+    drop_out: Tuple,
+    regularizer: Optional[tf.keras.regularizers.Regularizer],
+    cross_hair,
+) -> tf.Tensor:
     """
     Implements a convolutional layer: convolution + activation
 
@@ -247,27 +310,37 @@ def convolutional(x, kernel_dims, n_filter, stride, padding, dilation_rate,
         - passes `x` through an activation operation (See operation.activation() ) and return
     """
 
-    logger.debug('Convolution')
-    logger.debug('Input: %s', x.shape.as_list())
+    logger.debug("Convolution")
+    logger.debug("Input: %s", x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        logger.debug('Kernel: %s', kernel_dims)
-        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
-                                                     padding=padding,
-                                                     dilation_rate=dilation_rate, use_bias=use_bias,
-                                                     kernel_regularizer=regularizer)
+        logger.debug("Kernel: %s", kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv2D(
+            filters=n_filter,
+            kernel_size=kernel_dims,
+            strides=stride,
+            padding=padding,
+            dilation_rate=dilation_rate,
+            use_bias=use_bias,
+            kernel_regularizer=regularizer,
+        )
         x = convolutional_layer(x)
     elif tf.rank(x).numpy() == 5:
-        logger.debug('Kernel: %s', kernel_dims)
-        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
-                                                     padding=padding,
-                                                     dilation_rate=dilation_rate,
-                                                     use_bias=use_bias, kernel_regularizer=regularizer)
+        logger.debug("Kernel: %s", kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv3D(
+            filters=n_filter,
+            kernel_size=kernel_dims,
+            strides=stride,
+            padding=padding,
+            dilation_rate=dilation_rate,
+            use_bias=use_bias,
+            kernel_regularizer=regularizer,
+        )
         x = convolutional_layer(x)
 
     x = activation(act_func)(x)
 
-    logger.debug('Output: %s', x.shape)
+    logger.debug("Output: %s", x.shape)
 
     if batch_normalization:
         x = tf.keras.layers.BatchNormalization()(x)
@@ -282,26 +355,38 @@ def convolutional(x, kernel_dims, n_filter, stride, padding, dilation_rate,
     return x
 
 
-def downscale(x, downscale, kernel_dims, n_filter, stride, padding, dilation_rate,
-              act_func, use_bias, regularizer, cross_hair):
+def downscale(
+    x: tf.Tensor,
+    downscale_method: str,
+    kernel_dims: Union[int, Tuple],
+    n_filter: int,
+    stride: Tuple,
+    padding: str,
+    dilation_rate: Union[int, Tuple],
+    act_func: str,
+    use_bias: bool,
+    regularizer: Optional[tf.keras.regularizers.Regularizer],
+    cross_hair,
+) -> tf.Tensor:
     """!
     Implements a downscale layer: downscale + activation
 
 
-    net : 
-		A Network object.
-    x : 
-		A Tensor of TODO(shape,type) : Input Tensor to the block.
-    kernel_dims : 
-		A list of ints : [filter_height, filter_width] of spatial filters of the layer.
-    n_filter : 
-		int : The number of filters of the block.
+    net :
+        A Network object.
+    x :
+        A Tensor of TODO(shape,type) : Input Tensor to the block.
+    kernel_dims :
+        A list of ints : [filter_height, filter_width] of spatial filters of the layer.
+    n_filter :
+        int : The number of filters of the block.
     @return A Tensor `x`
 
     This function does the following:
     - perform downscale on `x`
-        - If downscale is  'STRIDE' , `x` is passed through a convolution operation with stride [2,2] (See operation.convolution() )
-        - If downscale is  'MAX_POOL' , maxpooling is permformed on `x` using [tf.nn.max_pool](https://www.tensorflow.org/api_docs/python/tf/nn/max_pool) with
+        - If downscale_method is  'STRIDE' , `x` is passed through a convolution operation
+          with stride [2,2] (See operation.convolution() )
+        - If downscale_method is  'MAX_POOL' , maxpooling is permformed on `x` using tf.nn.max_pool with
             - value : `x`
             - ksize : [1, 2, 2, 1]
             - strides:  [1, 2, 2, 1]
@@ -311,58 +396,85 @@ def downscale(x, downscale, kernel_dims, n_filter, stride, padding, dilation_rat
     """
 
     # ToDo: change between 2D and 3D based on rank of x
-    if downscale == 'STRIDE':
-        logger.debug('Convolution with Stride')
-        logger.debug('Input: %s', x.shape.as_list())
+    if downscale_method == "STRIDE":
+        logger.debug("Convolution with Stride")
+        logger.debug("Input: %s", x.shape.as_list())
         if tf.rank(x).numpy() == 4:
-            logger.debug('Kernel: %s,Stride: %s', kernel_dims, np.multiply(stride, 2))
-            convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims,
-                                                         strides=np.multiply(stride, 2),
-                                                         padding=padding, dilation_rate=dilation_rate,
-                                                         use_bias=use_bias, kernel_regularizer=regularizer)
+            logger.debug("Kernel: %s,Stride: %s", kernel_dims, np.multiply(stride, 2))
+            convolutional_layer = tf.keras.layers.Conv2D(
+                filters=n_filter,
+                kernel_size=kernel_dims,
+                strides=np.multiply(stride, 2),
+                padding=padding,
+                dilation_rate=dilation_rate,
+                use_bias=use_bias,
+                kernel_regularizer=regularizer,
+            )
         elif tf.rank(x).numpy() == 5:
-            logger.debug('Kernel: %s,Stride: %s', kernel_dims, np.multiply(stride, 2))
-            convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims,
-                                                         strides=np.multiply(stride, 2),
-                                                         padding=padding, dilation_rate=dilation_rate,
-                                                         use_bias=use_bias, kernel_regularizer=regularizer)
+            logger.debug("Kernel: %s,Stride: %s", kernel_dims, np.multiply(stride, 2))
+            convolutional_layer = tf.keras.layers.Conv3D(
+                filters=n_filter,
+                kernel_size=kernel_dims,
+                strides=np.multiply(stride, 2),
+                padding=padding,
+                dilation_rate=dilation_rate,
+                use_bias=use_bias,
+                kernel_regularizer=regularizer,
+            )
 
         x = convolutional_layer(x)
         x = activation(act_func)(x)
 
-    elif downscale == 'MAX_POOL':
+    elif downscale_method == "MAX_POOL":
         if tf.rank(x).numpy() == 4:
-            logger.debug('Max Pool')
-            logger.debug('Pool Size: %s', [2, 2])
-            logger.debug('Input: %s', x.shape.as_list())
+            logger.debug("Max Pool")
+            logger.debug("Pool Size: %s", [2, 2])
+            logger.debug("Input: %s", x.shape.as_list())
 
-            x = tf.keras.layers.MaxPool2D(pool_size=[2, 2], strides=[2, 2], padding=padding)(x)
+            x = tf.keras.layers.MaxPool2D(
+                pool_size=[2, 2], strides=[2, 2], padding=padding
+            )(x)
         elif tf.rank(x).numpy() == 5:
-            logger.debug('Max Pool')
-            logger.debug('Pool Size: %s', [2, 2, 2])
-            logger.debug('Input: %s', x.shape.as_list())
+            logger.debug("Max Pool")
+            logger.debug("Pool Size: %s", [2, 2, 2])
+            logger.debug("Input: %s", x.shape.as_list())
 
-            x = tf.keras.layers.MaxPool3D(pool_size=[2, 2, 2], strides=[2, 2, 2], padding=padding)(x)
+            x = tf.keras.layers.MaxPool3D(
+                pool_size=[2, 2, 2], strides=[2, 2, 2], padding=padding
+            )(x)
 
-    elif downscale == 'MAX_POOL_ARGMAX':
-        logger.debug('Max Pool with Argmax')
-        logger.debug('Kernel: %s', [1, 2, 2, 1])
-        logger.debug('Input: %s', x.shape.as_list())
+    elif downscale_method == "MAX_POOL_ARGMAX":
+        logger.debug("Max Pool with Argmax")
+        logger.debug("Kernel: %s", [1, 2, 2, 1])
+        logger.debug("Input: %s", x.shape.as_list())
 
-    logger.debug('Output: %s', x.shape)
+    logger.debug("Output: %s", x.shape)
 
     return x
 
 
-def upscale(x, upscale, kernel_dims, n_filter, stride, padding, dilation_rate,
-            act_func, use_bias, regularizer, cross_hair):
+def upscale(
+    x: tf.Tensor,
+    upscale_method: str,
+    kernel_dims: Union[int, Tuple],
+    n_filter: int,
+    stride: Tuple,
+    padding: str,
+    dilation_rate: Union[int, Tuple],
+    act_func: str,
+    use_bias: bool,
+    regularizer: Optional[tf.keras.regularizers.Regularizer],
+    cross_hair,
+) -> tf.Tensor:
     """!
     Implements a upcale layer: upcale + activation
 
     This function does the following:
     - perform downscale on `x`
-        - If upscale is  'TRANS_CONV' , `x` is passed through a transposed convolution operation with stride  [1, 2, 2, 1] (See operation.transposed_convolution() )
-        - If 'upscale' is  'UNPOOL_MAX_IND' ,
+        - If upscale_method is  'TRANS_CONV'
+            - `x` is passed through a transposed convolution operation with
+              stride [1, 2, 2, 1] (See operation.transposed_convolution() )
+        - If 'upscale_method' is  'UNPOOL_MAX_IND' ,
             - x is passed through a unpooling at indices operation with
                 -output shape, outshape given by unpool_param[0] (storing the input shape) and
                 - indices, indices given by unpool_param[1] (storing  the maxpool indices)
@@ -372,68 +484,99 @@ def upscale(x, upscale, kernel_dims, n_filter, stride, padding, dilation_rate,
     @todo BI_INTER, unpool_param
     """
 
-    if upscale == 'TRANS_CONV':
+    if upscale_method == "TRANS_CONV":
 
         strides = np.multiply(stride, 2)
 
-        logger.debug('Transposed Convolution')
-        logger.debug('Kernel: %s Stride: %s', kernel_dims, strides)
-        logger.debug('Input: %s', x.shape.as_list())
+        logger.debug("Transposed Convolution")
+        logger.debug("Kernel: %s Stride: %s", kernel_dims, strides)
+        logger.debug("Input: %s", x.shape.as_list())
 
         if tf.rank(x).numpy() == 4:
-            convolutional_layer = tf.keras.layers.Conv2DTranspose(filters=n_filter, kernel_size=kernel_dims,
-                                                                  strides=strides, padding=padding,
-                                                                  dilation_rate=dilation_rate,
-                                                                  use_bias=use_bias, kernel_regularizer=regularizer)
+            convolutional_layer = tf.keras.layers.Conv2DTranspose(
+                filters=n_filter,
+                kernel_size=kernel_dims,
+                strides=strides,
+                padding=padding,
+                dilation_rate=dilation_rate,
+                use_bias=use_bias,
+                kernel_regularizer=regularizer,
+            )
             x = convolutional_layer(x)
         elif tf.rank(x).numpy() == 5:
 
-            convolutional_layer = tf.keras.layers.Conv3DTranspose(filters=n_filter, kernel_size=kernel_dims,
-                                                                  strides=strides, padding=padding,
-                                                                  dilation_rate=dilation_rate,
-                                                                  use_bias=use_bias, kernel_regularizer=regularizer)
+            convolutional_layer = tf.keras.layers.Conv3DTranspose(
+                filters=n_filter,
+                kernel_size=kernel_dims,
+                strides=strides,
+                padding=padding,
+                dilation_rate=dilation_rate,
+                use_bias=use_bias,
+                kernel_regularizer=regularizer,
+            )
             x = convolutional_layer(x)
 
         x = activation(act_func)(x)
 
-    elif upscale == 'BI_INTER':
+    elif upscale_method == "BI_INTER":
         raise NotImplementedError("BI_INTER not implemented")
 
-    elif upscale == 'UNPOOL_MAX_IND':
+    elif upscale_method == "UNPOOL_MAX_IND":
         raise NotImplementedError("UNPOOL_MAX_IND not implemented")
 
-    logger.debug('Output: %s', x.shape)
+    logger.debug("Output: %s", x.shape)
     return x
 
 
-def last(x, kernel_dims, n_filter, stride, padding, dilation_rate,
-         act_func, use_bias, regularizer, l2_normalize=False):
+def last(
+    x: tf.Tensor,
+    kernel_dims: Union[int, Tuple],
+    n_filter: int,
+    stride: Tuple,
+    padding: str,
+    dilation_rate,
+    act_func: str,
+    use_bias: bool,
+    regularizer: Optional[tf.keras.regularizers.Regularizer],
+    l2_normalize=False,
+) -> tf.Tensor:
     """!
     Implements a last layer computing logits
 
     This function does the following:
         - passes `x` through a convolution operation with stride [1,1] (See operation.convolution() )
-        - If net.options['use_bias'] is  True , @b todo, (See [ tf.nn.bias_add](https://www.tensorflow.org/api_docs/python/tf/nn/bias_add))
 
     @todo BI_INTER
     """
 
-    logger.debug('Convolution')
-    logger.debug('Input: %s', x.shape.as_list())
+    logger.debug("Convolution")
+    logger.debug("Input: %s", x.shape.as_list())
 
     if tf.rank(x).numpy() == 4:
-        logger.debug('Kernel: %s', kernel_dims)
-        convolutional_layer = tf.keras.layers.Conv2D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
-                                                     padding=padding, dilation_rate=dilation_rate,
-                                                     use_bias=use_bias, kernel_regularizer=regularizer)
+        logger.debug("Kernel: %s", kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv2D(
+            filters=n_filter,
+            kernel_size=kernel_dims,
+            strides=stride,
+            padding=padding,
+            dilation_rate=dilation_rate,
+            use_bias=use_bias,
+            kernel_regularizer=regularizer,
+        )
         x = convolutional_layer(x)
 
     elif tf.rank(x).numpy() == 5:
 
-        logger.debug('Kernel: %s', kernel_dims)
-        convolutional_layer = tf.keras.layers.Conv3D(filters=n_filter, kernel_size=kernel_dims, strides=stride,
-                                                     padding=padding, dilation_rate=dilation_rate,
-                                                     use_bias=use_bias, kernel_regularizer=regularizer)
+        logger.debug("Kernel: %s", kernel_dims)
+        convolutional_layer = tf.keras.layers.Conv3D(
+            filters=n_filter,
+            kernel_size=kernel_dims,
+            strides=stride,
+            padding=padding,
+            dilation_rate=dilation_rate,
+            use_bias=use_bias,
+            kernel_regularizer=regularizer,
+        )
         x = convolutional_layer(x)
 
     x = activation(act_func)(x)

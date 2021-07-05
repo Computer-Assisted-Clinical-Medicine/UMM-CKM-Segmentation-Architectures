@@ -11,10 +11,12 @@ from .deeplab import DeepLabv3plus
 from .densenets import DenseTiramisu
 from .unets import unet, unet_old
 
+
 def test_deeplab():
     in_channels = 3
     input_shape = (256, 256, in_channels)
     model_creation(DeepLabv3plus, in_channels, input_shape)
+
 
 @pytest.mark.parametrize("in_channels", [1, 2, 3])
 def test_dense_tiramisu(in_channels):
@@ -22,36 +24,51 @@ def test_dense_tiramisu(in_channels):
     input_shape = (128, 128, in_channels)
     model_creation(DeepLabv3plus, in_channels, input_shape)
 
+
 @pytest.mark.parametrize("model", [unet, unet_old])
 @pytest.mark.parametrize("in_channels", [1, 2, 3])
 @pytest.mark.parametrize("batch_norm", [True, False])
 @pytest.mark.parametrize("act_func", ["relu", "elu"])
-@pytest.mark.parametrize("name", ["Unet", "SEUnet", "SEAttnUnet", "CBAMUnet", "CBAMAttnUnet", "AttnUnet"])
+@pytest.mark.parametrize(
+    "name", ["Unet", "SEUnet", "SEAttnUnet", "CBAMUnet", "CBAMAttnUnet", "AttnUnet"]
+)
 @pytest.mark.parametrize("res_connect", [True, False])
 @pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
 @pytest.mark.parametrize("skip_connect", [True, False])
-def test_unet(model, in_channels, batch_norm, act_func, name, res_connect, res_connect_type, skip_connect):
+def test_unet(
+    model,
+    in_channels,
+    batch_norm,
+    act_func,
+    name,
+    res_connect,
+    res_connect_type,
+    skip_connect,
+):
     in_channels = 3
     input_shape = (128, 128, in_channels)
     hyperparameters = {
-        "batch_normalization" : batch_norm,
-        "activation" : act_func,
-        "name" : name,
-        "res_connect" : res_connect,
-        "res_connect_type" : res_connect_type,
-        "skip_connect" : skip_connect,
-        "ratio" : 2 # only important for attention models
+        "batch_normalization": batch_norm,
+        "activation": act_func,
+        "name": name,
+        "res_connect": res_connect,
+        "res_connect_type": res_connect_type,
+        "skip_connect": skip_connect,
+        "ratio": 2,  # only important for attention models
     }
     model_creation(model, in_channels, input_shape, hyperparameters)
 
-def model_creation(model, in_channels, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
+
+def model_creation(
+    model, in_channels, input_shape, hyperparameters={}, do_fit=False, do_plot=False
+):
     out_channels = 2
     batch = 4
     model_built: tf.keras.Model = model(
         tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
         out_channels,
         "DICE",
-        **hyperparameters
+        **hyperparameters,
     )
     output_shape = model_built.output.shape.as_list()
     # make sure that the dimensions are right
@@ -88,7 +105,9 @@ if __name__ == "__main__":
     logger = logging.getLogger("")
     logger.setLevel(logging.DEBUG)
     sh = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter('%(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s')
+    formatter = logging.Formatter(
+        "%(levelname)s [%(filename)s.%(funcName)s:%(lineno)d] %(message)s"
+    )
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 

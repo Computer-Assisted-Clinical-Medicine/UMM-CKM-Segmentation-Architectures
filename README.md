@@ -21,7 +21,17 @@ python -m virtualenv venv
 
 And then install the requirements.
 
-python -m pip install -r requirements.txt
+Pre-commit can be installed with
+
+pip install pre-commit
+
+The cooks will be installed by
+
+pre-commit install
+
+You can run the hooks for all files using (usually, they are run only for files being committed)
+
+pre-commit run --all-files
 
 ## Running the tests
 

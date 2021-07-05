@@ -2,7 +2,7 @@
 Implements multiple different kinds of UNets
 """
 from functools import partial
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 import tensorflow as tf
 from tensorflow.keras.layers import Add, Concatenate
@@ -11,8 +11,15 @@ from . import layers
 from .utils import get_regularizer, select_final_activation
 
 
-def conv_block(x: tf.Tensor, n_conv: int, conv: Callable, n_filter: int, attention: Optional[Callable],
-               res_connect: bool, res_connect_type="skip_first") -> tf.Tensor:
+def conv_block(
+    x: tf.Tensor,
+    n_conv: int,
+    conv: Callable,
+    n_filter: int,
+    attention: Optional[Callable],
+    res_connect: bool,
+    res_connect_type="skip_first",
+) -> tf.Tensor:
     """Convolutional block performing attention and residual connections if
     specified
 
@@ -68,7 +75,16 @@ def conv_block(x: tf.Tensor, n_conv: int, conv: Callable, n_filter: int, attenti
     return x
 
 
-def encoder_block(x, conv, attention, downscale, n_conv, n_filter, res_connect, res_connect_type):
+def encoder_block(
+    x: tf.Tensor,
+    conv: Callable,
+    attention: Optional[Callable],
+    downscale: Callable,
+    n_conv: int,
+    n_filter: int,
+    res_connect: bool,
+    res_connect_type: str,
+) -> Tuple[tf.Tensor, tf.Tensor]:
     """Encoder block with n_conv convolutional layers followed by downsampling.
     The conv block uses attention and residual connections if specified.
 
@@ -98,13 +114,28 @@ def encoder_block(x, conv, attention, downscale, n_conv, n_filter, res_connect, 
     -------
     tf.Tensor
         The output tensor
+    tf.Tensor
+        The tensor before downscaling (before the skip connection)
     """
-    x_before_downscale = conv_block(x, n_conv, conv, n_filter, attention, res_connect, res_connect_type)
+    x_before_downscale = conv_block(
+        x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
+    )
     x = downscale(x_before_downscale, n_filter=n_filter)
     return x, x_before_downscale
 
 
-def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_filter, res_connect, res_connect_type):
+def decoder_block(
+    x: tf.Tensor,
+    x_skip: Optional[tf.Tensor],
+    conv: Callable,
+    upscale: Callable,
+    attention: Optional[Callable],
+    gate_signal: Optional[Callable],
+    n_conv: int,
+    n_filter: int,
+    res_connect: bool,
+    res_connect_type: str,
+) -> tf.Tensor:
     """
     Decoder block, does n_conv convolutions (using the conv function) with
     attention if attention is not none. If res_connect, everything after the
@@ -146,6 +177,9 @@ def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_fi
     x = upscale(x, n_filter=n_filter)
     if x_skip is not None:
         if attention is not None:
+            assert (
+                gate_signal is not None
+            ), "If using attention, also provide a gate function"
             gate = tf.identity(x_before_upscale)
             gate = gate_signal(gate)
             attn = attention(x_skip, g=gate)
@@ -157,11 +191,31 @@ def decoder_block(x, x_skip, conv, upscale, attention, gate_signal, n_conv, n_fi
     return x
 
 
-def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
-         n_convolutions=(2, 2, 3, 3, 3), kernel_dims=3, stride=1, batch_normalization=True, use_bias=False,
-         drop_out=(False, 0.2), upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001),
-         padding='SAME', activation='relu', name='Unet', ratio=1, dilation_rate=1, cross_hair=False,
-         res_connect=True, res_connect_type="skip_first", skip_connect=True, **kwargs) -> tf.keras.Model:
+def unet(
+    input_tensor: tf.Tensor,
+    out_channels: int,
+    loss: str,
+    n_filter=(8, 16, 32, 64, 128),
+    n_convolutions=(2, 2, 3, 3, 3),
+    kernel_dims=3,
+    stride=1,
+    batch_normalization=True,
+    use_bias=False,
+    drop_out=(False, 0.2),
+    upscale="TRANS_CONV",
+    downscale="MAX_POOL",
+    regularize=(True, "L2", 0.001),
+    padding="SAME",
+    activation="relu",
+    name="Unet",
+    ratio=1,
+    dilation_rate=1,
+    cross_hair=False,
+    res_connect=True,
+    res_connect_type="skip_first",
+    skip_connect=True,
+    **kwargs,
+) -> tf.keras.Model:
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
@@ -232,16 +286,22 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
     """
 
     # TODO: make two new parameters, attention or not in decode and encdoe attention
-    available_models = ['Unet', 'SEUnet', 'SEAttnUnet',
-                        'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet']
-    se_models = ['SEUnet', 'SEAttnUnet']
-    cbam_models = ['CBAMUnet', 'CBAMAttnUnet']
-    attn_models = ['AttnUnet', 'SEAttnUnet', 'CBAMAttnUnet']
+    available_models = [
+        "Unet",
+        "SEUnet",
+        "SEAttnUnet",
+        "CBAMUnet",
+        "CBAMAttnUnet",
+        "AttnUnet",
+    ]
+    se_models = ["SEUnet", "SEAttnUnet"]
+    cbam_models = ["CBAMUnet", "CBAMAttnUnet"]
+    attn_models = ["AttnUnet", "SEAttnUnet", "CBAMAttnUnet"]
     if name not in available_models:
-        raise NotImplementedError(f'Architecture:{name} not implemented')
-    if name not in ['Unet', 'AttnUnet']:
+        raise NotImplementedError(f"Architecture:{name} not implemented")
+    if name not in ["Unet", "AttnUnet"]:
         if ratio <= 1:
-            raise ValueError('For SE or CBAM blocks to work, use ratio higher than 1')
+            raise ValueError("For SE or CBAM blocks to work, use ratio higher than 1")
 
     if len(n_filter) != len(n_convolutions):
         raise ValueError("n_filter should have the same length as n_convolutions.")
@@ -250,20 +310,49 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
 
     # set up permanent arguments of the layers
     stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
-    conv = partial(layers.convolutional, kernel_dims=kernel_dims, stride=stride,
-                   batch_normalization=batch_normalization, drop_out=drop_out,
-                   use_bias=use_bias, regularizer=regularizer, padding=padding,
-                   act_func=activation, dilation_rate=dilation_rate, cross_hair=cross_hair)
-    downscale = partial(layers.downscale, downscale=downscale, kernel_dims=kernel_dims,
-                        act_func=activation, stride=stride, use_bias=use_bias,
-                        regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
-                        cross_hair=cross_hair)  # here stride is multiplied by 2 in func to downscale by 2
-    upscale = partial(layers.upscale, upscale=upscale, kernel_dims=kernel_dims,
-                      act_func=activation, stride=stride, use_bias=use_bias,
-                      regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
-                      cross_hair=cross_hair)  # stride multiplied by 2 in function
-    gate_signal = partial(layers.unet_gating_signal, batch_normalization=batch_normalization)
-    attn_block = partial(layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization)
+    conv = partial(
+        layers.convolutional,
+        kernel_dims=kernel_dims,
+        stride=stride,
+        batch_normalization=batch_normalization,
+        drop_out=drop_out,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        act_func=activation,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )
+    downscale = partial(
+        layers.downscale,
+        downscale=downscale,
+        kernel_dims=kernel_dims,
+        act_func=activation,
+        stride=stride,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )  # here stride is multiplied by 2 in func to downscale by 2
+    upscale = partial(
+        layers.upscale,
+        upscale=upscale,
+        kernel_dims=kernel_dims,
+        act_func=activation,
+        stride=stride,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )  # stride multiplied by 2 in function
+    gate_signal = partial(
+        layers.unet_gating_signal, batch_normalization=batch_normalization
+    )
+    attn_block = partial(
+        layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization
+    )
     se_block = partial(layers.se_block, act_func=activation, ratio=ratio)
     cbam_block = partial(layers.cbam_block, ratio=ratio)
 
@@ -288,7 +377,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
             n_conv=n_conv,
             n_filter=filters,
             res_connect=res_connect,
-            res_connect_type=res_connect_type
+            res_connect_type=res_connect_type,
         )
         skip_connections.append(x_skip)
 
@@ -300,7 +389,7 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
         n_filter=n_filter[-1],
         attention=None,
         res_connect=res_connect,
-        res_connect_type=res_connect_type
+        res_connect_type=res_connect_type,
     )
 
     if name in attn_models:
@@ -310,7 +399,9 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
         gate_signal_decoder = None
         decode_attention = None
     # decoding path going the other way in the lists
-    for filters, n_conv, x_skip in zip(n_filter[-2::-1], n_convolutions[-2::-1], skip_connections[::-1]):
+    for filters, n_conv, x_skip in zip(
+        n_filter[-2::-1], n_convolutions[-2::-1], skip_connections[::-1]
+    ):
         if not skip_connect:
             x_skip = None
         if decode_attention is None:
@@ -327,23 +418,47 @@ def unet(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16,
             n_conv=n_conv,
             n_filter=filters,
             res_connect=res_connect,
-            res_connect_type=res_connect_type
+            res_connect_type=res_connect_type,
         )
 
     # final output layer
-    logits = layers.last(x, kernel_dims=1, n_filter=out_channels,
-                         stride=stride, dilation_rate=dilation_rate, padding=padding,
-                         act_func=select_final_activation(loss, out_channels),
-                         use_bias=False, regularizer=regularizer, l2_normalize=False)
+    logits = layers.last(
+        x,
+        kernel_dims=1,
+        n_filter=out_channels,
+        stride=stride,
+        dilation_rate=dilation_rate,
+        padding=padding,
+        act_func=select_final_activation(loss, out_channels),
+        use_bias=False,
+        regularizer=regularizer,
+        l2_normalize=False,
+    )
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)
 
 
-def unet_old(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8, 16, 32, 64, 128),
-             kernel_dims=3, stride=1, batch_normalization=True, use_bias=False, drop_out=(False, 0.2),
-             upscale='TRANS_CONV', downscale='MAX_POOL', regularize=(True, "L2", 0.001), padding='SAME',
-             activation='relu',
-             name='Unet', ratio=1, dilation_rate=1, cross_hair=False, **kwargs):
+def unet_old(
+    input_tensor: tf.Tensor,
+    out_channels: int,
+    loss: str,
+    n_filter=(8, 16, 32, 64, 128),
+    kernel_dims=3,
+    stride=1,
+    batch_normalization=True,
+    use_bias=False,
+    drop_out=(False, 0.2),
+    upscale="TRANS_CONV",
+    downscale="MAX_POOL",
+    regularize=(True, "L2", 0.001),
+    padding="SAME",
+    activation="relu",
+    name="Unet",
+    ratio=1,
+    dilation_rate=1,
+    cross_hair=False,
+    **kwargs,
+):
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
     (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
@@ -400,16 +515,22 @@ def unet_old(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8,
         A model specified in the name argument.
     """
 
-    available_models = ['Unet', 'SEUnet', 'SEAttnUnet',
-                        'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet']
-    se_models = ['SEUnet', 'SEAttnUnet']
-    cbam_models = ['CBAMUnet', 'CBAMAttnUnet']
-    attn_models = ['AttnUnet', 'SEAttnUnet', 'CBAMAttnUnet']
+    available_models = [
+        "Unet",
+        "SEUnet",
+        "SEAttnUnet",
+        "CBAMUnet",
+        "CBAMAttnUnet",
+        "AttnUnet",
+    ]
+    se_models = ["SEUnet", "SEAttnUnet"]
+    cbam_models = ["CBAMUnet", "CBAMAttnUnet"]
+    attn_models = ["AttnUnet", "SEAttnUnet", "CBAMAttnUnet"]
     if name not in available_models:
-        raise NotImplementedError(f'Architecture:{name} not implemented')
-    if name not in ['Unet', 'AttnUnet']:
+        raise NotImplementedError(f"Architecture:{name} not implemented")
+    if name not in ["Unet", "AttnUnet"]:
         if ratio <= 1:
-            raise ValueError('For SE or CBAM blocks to work, use ratio higher than 1')
+            raise ValueError("For SE or CBAM blocks to work, use ratio higher than 1")
 
     rank = len(input_tensor.shape) - 2
     kernel_dims = [kernel_dims] * rank
@@ -418,20 +539,49 @@ def unet_old(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8,
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    conv = partial(layers.convolutional, kernel_dims=kernel_dims, stride=stride,
-                   batch_normalization=batch_normalization, drop_out=drop_out,
-                   use_bias=use_bias, regularizer=regularizer, padding=padding,
-                   act_func=activation, dilation_rate=dilation_rate, cross_hair=cross_hair)
-    downscale = partial(layers.downscale, downscale=downscale, kernel_dims=kernel_dims,
-                        act_func=activation, stride=stride, use_bias=use_bias,
-                        regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
-                        cross_hair=cross_hair)  # here stride is multiplied by 2 in func to downscale by 2
-    upscale = partial(layers.upscale, upscale=upscale, kernel_dims=kernel_dims,
-                      act_func=activation, stride=stride, use_bias=use_bias,
-                      regularizer=regularizer, padding=padding, dilation_rate=dilation_rate,
-                      cross_hair=cross_hair)  # stride multiplied by 2 in function
-    gate_signal = partial(layers.unet_gating_signal, batch_normalization=batch_normalization)
-    attn_block = partial(layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization)
+    conv = partial(
+        layers.convolutional,
+        kernel_dims=kernel_dims,
+        stride=stride,
+        batch_normalization=batch_normalization,
+        drop_out=drop_out,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        act_func=activation,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )
+    downscale = partial(
+        layers.downscale,
+        downscale=downscale,
+        kernel_dims=kernel_dims,
+        act_func=activation,
+        stride=stride,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )  # here stride is multiplied by 2 in func to downscale by 2
+    upscale = partial(
+        layers.upscale,
+        upscale=upscale,
+        kernel_dims=kernel_dims,
+        act_func=activation,
+        stride=stride,
+        use_bias=use_bias,
+        regularizer=regularizer,
+        padding=padding,
+        dilation_rate=dilation_rate,
+        cross_hair=cross_hair,
+    )  # stride multiplied by 2 in function
+    gate_signal = partial(
+        layers.unet_gating_signal, batch_normalization=batch_normalization
+    )
+    attn_block = partial(
+        layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization
+    )
     se_block = partial(layers.se_block, act_func=activation, ratio=ratio)
     cbam_block = partial(layers.cbam_block, ratio=ratio)
 
@@ -543,9 +693,17 @@ def unet_old(input_tensor: tf.Tensor, out_channels: int, loss: str, n_filter=(8,
     residual9 = Add()([x9_0, x9_1])
 
     # final output layer
-    logits = layers.last(residual9, kernel_dims=1, n_filter=out_channels,
-                         stride=stride, dilation_rate=dilation_rate, padding=padding,
-                         act_func=select_final_activation(loss, out_channels),
-                         use_bias=False, regularizer=regularizer, l2_normalize=False)
+    logits = layers.last(
+        residual9,
+        kernel_dims=1,
+        n_filter=out_channels,
+        stride=stride,
+        dilation_rate=dilation_rate,
+        padding=padding,
+        act_func=select_final_activation(loss, out_channels),
+        use_bias=False,
+        regularizer=regularizer,
+        l2_normalize=False,
+    )
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)

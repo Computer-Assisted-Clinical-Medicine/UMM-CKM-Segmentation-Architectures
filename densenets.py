@@ -259,8 +259,8 @@ def transition_up(x, filters: int, size=3, regularizer=None, name="up"):
     return x
 
 
-# Original names are used for better readability pylint: disable=invalid-name
-def DenseTiramisu(
+# Original names are used for better readability
+def DenseTiramisu(  # pylint: disable=invalid-name
     input_tensor: tf.Tensor,
     out_channels: int,
     loss: str,
