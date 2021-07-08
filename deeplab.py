@@ -43,56 +43,64 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
         If a not recognized network is selected
     """
     rank = len(input_tensor.shape) - 2
+    # validate parameters
+    if rank != 2:
+        raise ValueError("ResNet Backbone can only be used for 2D networks")
+    # see if the number of channels has to be changed
+    if input_tensor.shape[-1] != 3:
+        logger.info("Not three channels, input layer will be modified.")
+        if replace_input:
+            input_backbone = tf.keras.Input(
+                shape=input_tensor.shape[1:3] + (3,), batch_size=input_tensor.shape[0]
+            )
+        else:
+            raise ValueError("The input should have 3 channels.")
+    else:
+        input_backbone = input_tensor
 
     # ResNet backbones
-    if "resnet" in name:
-        # validate parameters
-        if rank != 2:
-            raise ValueError("ResNet Backbone can only be used for 2D networks")
-        if input_tensor.shape[-1] != 3:
-            raise ValueError("This backbone only works with 3 input channels.")
     if name == "resnet50":
         # should be with a factor 4 reduced compared to input resolution
         layer_low = "conv2_block3_out"
         # should be output after removing the last 1 or 2 blocks (with factor 16 compared to input resolution)
         layer_high = "post_relu"
         backbone = tf.keras.applications.ResNet50V2(
-            include_top=False, input_tensor=input_tensor
+            include_top=False, input_tensor=input_backbone
         )
         # for the resnet, 3 layers need to be changed (maxpool in the skip branch and
         # the convolution and the previous padding)
         dilate = ["conv4_block6_2_conv", "conv4_block6_2_pad", "max_pooling2d_2"]
         # change the last convolution to a dilation instead of stride
-        backbone = dilate_backbone(backbone, dilate)
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
     elif name == "resnet101":
         layer_low = "conv2_block2_out"
         layer_high = "post_relu"
         backbone = tf.keras.applications.ResNet101V2(
-            include_top=False, input_tensor=input_tensor
+            include_top=False, input_tensor=input_backbone
         )
         # dilate
         dilate = ["conv4_block23_2_conv", "conv4_block23_2_pad", "max_pooling2d_2"]
-        backbone = dilate_backbone(backbone, dilate)
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
     elif name == "resnet152":
         layer_low = "conv2_block2_out"
         layer_high = "post_relu"
         backbone = tf.keras.applications.ResNet152V2(
-            include_top=False, input_tensor=input_tensor
+            include_top=False, input_tensor=input_backbone
         )
         # dilate
         dilate = ["conv4_block36_2_conv", "conv4_block36_2_pad", "max_pooling2d_2"]
-        backbone = dilate_backbone(backbone, dilate)
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
 
     # MobileNet backbone # TODO: upgrade and add v3
     elif name == "mobilenet_v2":
         layer_low = "block_2_add"
         layer_high = "out_relu"
         backbone = tf.keras.applications.mobilenet_v2.MobileNetV2(
-            include_top=False, input_tensor=input_tensor
+            include_top=False, input_tensor=input_backbone
         )
         # dilate
         dilate = ["block_13_depthwise", "block_13_pad"]
-        backbone = dilate_backbone(backbone, dilate)
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
 
     else:
         raise NotImplementedError(f"Backbone {name} unknown.")
@@ -100,10 +108,12 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
     return backbone, layer_low, layer_high
 
 
-def dilate_backbone(backbone: Model, dilate: List[str]) -> Model:
-    """Dilate the backbone by changing layers with stride 2 to have stride 1 and
+def modify_backbone(backbone: Model, dilate: List[str], input_shape=None) -> Model:
+    """Adjust the backbone by changing layers with stride 2 to have stride 1 and
     dilation 2. For maxpool layers, the stride will be changed to 1 and for
     padding, it will be increased from 1 to 2.
+    If the number of channels do not match up, the input can also be changed.
+    The weights of the first layer are then initialized in a randomly.
 
     Parameters
     ----------
@@ -111,11 +121,13 @@ def dilate_backbone(backbone: Model, dilate: List[str]) -> Model:
         The model to dilate
     dilate : List[str]
         The names of the layers to dilate
+    input_shape : Tuple
+        The input shape if it should be changed
 
     Returns
     -------
     Model
-        The dilated model
+        The modified model
 
     Raises
     ------
@@ -148,11 +160,39 @@ def dilate_backbone(backbone: Model, dilate: List[str]) -> Model:
                 ValueError(f'Padding {layer["config"]["padding"]} not implemented')
         else:
             raise ValueError(f"Layer class {layer['class_name']} unknown.")
+
+    # see if the input shape should be changed
+    if input_shape is not None:
+        # and differs from the original one
+        if input_shape != backbone.input_shape:
+            input_layers = [
+                l for l in backbone_config["layers"] if l["class_name"] == "InputLayer"
+            ]
+            if len(input_layers) != 1:
+                raise ValueError(f"{len(input_layers)} input layers found instead of 1")
+            # set new shape
+            input_layers[0]["config"]["batch_input_shape"] = input_shape
+
     # create it from config again
-    backbone_dilated = backbone.from_config(backbone_config)
+    backbone_modified = backbone.from_config(backbone_config)
+
+    missmatched_layers = []
     # set the weights
-    backbone_dilated.set_weights(backbone.get_weights())
-    return backbone_dilated
+    for layer in backbone_modified.layers:
+        original_layer = backbone.get_layer(layer.name)
+        if original_layer.count_params() == layer.count_params():
+            layer.set_weights(original_layer.get_weights())
+        else:
+            missmatched_layers.append(layer)
+            logger.info("Weights were not copied for layer %s.", layer.name)
+
+    if len(missmatched_layers) > 1:
+        raise ValueError(
+            "There was a weights shape missmatch in more than one layer. "
+            + "Weights should only differ in the first layer."
+        )
+
+    return backbone_modified
 
 
 def upsample(x: tf.Tensor, size: List, name="up") -> tf.Tensor:
@@ -377,7 +417,9 @@ def DeepLabv3plus(  # pylint: disable=invalid-name
     # TODO: add dropout and bias
 
     regularizer = get_regularizer(*regularize)
-    backbone, layer_low, layer_high = configure_backbone(backbone, input_tensor)
+    backbone, layer_low, layer_high = configure_backbone(
+        backbone, input_tensor, replace_input=True
+    )
 
     assert is_training, "only use this for training"
 

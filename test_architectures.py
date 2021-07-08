@@ -13,8 +13,8 @@ from .unets import unet, unet_old
 
 
 @pytest.mark.parametrize("backbone", ["resnet50", "resnet101", "resnet152", "mobilenet_v2"])
-def test_deeplab(backbone):
-    in_channels = 3
+@pytest.mark.parametrize("in_channels", [1, 2, 3])
+def test_deeplab(backbone, in_channels):
     input_shape = (256, 256, in_channels)
 
     hyperparameters = {"backbone": backbone}
@@ -119,6 +119,6 @@ if __name__ == "__main__":
         model_creation(
             mod,
             in_channels=3,
-            input_shape=(256, 256, 3),
+            input_shape=(256, 256, 2),
             hyperparameters={"backbone": "mobilenet_v2"},
         )
