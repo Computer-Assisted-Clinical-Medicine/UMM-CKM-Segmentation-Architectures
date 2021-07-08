@@ -43,23 +43,116 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
         If a not recognized network is selected
     """
     rank = len(input_tensor.shape) - 2
-    if name == "resnet50":
+
+    # ResNet backbones
+    if "resnet" in name:
+        # validate parameters
         if rank != 2:
-            raise ValueError("ResNet50 Backbone can only be used for 2D networks")
-        # should be output after removing the last 1 or 2 blocks (with factor 16 compared to input resolution)
-        layer_high = "conv4_block6_out"
+            raise ValueError("ResNet Backbone can only be used for 2D networks")
+        if input_tensor.shape[-1] != 3:
+            raise ValueError("This backbone only works with 3 input channels.")
+    if name == "resnet50":
         # should be with a factor 4 reduced compared to input resolution
         layer_low = "conv2_block3_out"
-        assert (
-            input_tensor.shape[-1] == 3
-        ), "This backbone only works with 3 input channels."
-        backbone = tf.keras.applications.ResNet50(
+        # should be output after removing the last 1 or 2 blocks (with factor 16 compared to input resolution)
+        layer_high = "post_relu"
+        backbone = tf.keras.applications.ResNet50V2(
             include_top=False, input_tensor=input_tensor
         )
+        # for the resnet, 3 layers need to be changed (maxpool in the skip branch and
+        # the convolution and the previous padding)
+        dilate = ["conv4_block6_2_conv", "conv4_block6_2_pad", "max_pooling2d_2"]
+        # change the last convolution to a dilation instead of stride
+        backbone = dilate_backbone(backbone, dilate)
+    elif name == "resnet101":
+        layer_low = "conv2_block2_out"
+        layer_high = "post_relu"
+        backbone = tf.keras.applications.ResNet101V2(
+            include_top=False, input_tensor=input_tensor
+        )
+        # dilate
+        dilate = ["conv4_block23_2_conv", "conv4_block23_2_pad", "max_pooling2d_2"]
+        backbone = dilate_backbone(backbone, dilate)
+    elif name == "resnet152":
+        layer_low = "conv2_block2_out"
+        layer_high = "post_relu"
+        backbone = tf.keras.applications.ResNet152V2(
+            include_top=False, input_tensor=input_tensor
+        )
+        # dilate
+        dilate = ["conv4_block36_2_conv", "conv4_block36_2_pad", "max_pooling2d_2"]
+        backbone = dilate_backbone(backbone, dilate)
+
+    # MobileNet backbone # TODO: upgrade and add v3
+    elif name == "mobilenet_v2":
+        layer_low = "block_2_add"
+        layer_high = "out_relu"
+        backbone = tf.keras.applications.mobilenet_v2.MobileNetV2(
+            include_top=False, input_tensor=input_tensor
+        )
+        # dilate
+        dilate = ["block_13_depthwise", "block_13_pad"]
+        backbone = dilate_backbone(backbone, dilate)
+
     else:
         raise NotImplementedError(f"Backbone {name} unknown.")
 
     return backbone, layer_low, layer_high
+
+
+def dilate_backbone(backbone: Model, dilate: List[str]) -> Model:
+    """Dilate the backbone by changing layers with stride 2 to have stride 1 and
+    dilation 2. For maxpool layers, the stride will be changed to 1 and for
+    padding, it will be increased from 1 to 2.
+
+    Parameters
+    ----------
+    backbone : Model
+        The model to dilate
+    dilate : List[str]
+        The names of the layers to dilate
+
+    Returns
+    -------
+    Model
+        The dilated model
+
+    Raises
+    ------
+    ValueError
+        If the layer type is not recognized
+    """
+    # change the last convolution to a dilation instead of stride
+    backbone_config = backbone.get_config()
+    to_dilate = [l for l in backbone_config["layers"] if l["name"] in dilate]
+    # dilate the selected layers
+    for layer in to_dilate:
+        if layer["class_name"] in ["Conv2D", "DepthwiseConv2D"]:
+            assert layer["config"]["strides"] == (2, 2), "Stride should be 2."
+            assert layer["config"]["dilation_rate"] == (1, 1), "Dilation rate should be 1."
+            # change the stride and dilation rate
+            layer["config"]["strides"] = (1, 1)
+            layer["config"]["dilation_rate"] = (2, 2)
+        elif layer["class_name"] == "MaxPooling2D":
+            assert layer["config"]["strides"] == (2, 2), "Stride should be 2."
+            # change the stride
+            layer["config"]["strides"] = (1, 1)
+        elif layer["class_name"] == "ZeroPadding2D":
+            if layer["config"]["padding"] == ((1, 1), (1, 1)):
+                # change the padding
+                layer["config"]["padding"] = ((2, 2), (2, 2))
+            elif layer["config"]["padding"] == ((0, 1), (0, 1)):
+                # change the padding
+                layer["config"]["padding"] = ((1, 2), (1, 2))
+            else:
+                ValueError(f'Padding {layer["config"]["padding"]} not implemented')
+        else:
+            raise ValueError(f"Layer class {layer['class_name']} unknown.")
+    # create it from config again
+    backbone_dilated = backbone.from_config(backbone_config)
+    # set the weights
+    backbone_dilated.set_weights(backbone.get_weights())
+    return backbone_dilated
 
 
 def upsample(x: tf.Tensor, size: List, name="up") -> tf.Tensor:
@@ -281,7 +374,6 @@ def DeepLabv3plus(  # pylint: disable=invalid-name
         classed model with custom functionality, by default tf.keras.Model
     """
 
-    # TODO: add change in stride to only reduce features by factor 8 (memory intensive), maybe as separate function
     # TODO: add dropout and bias
 
     regularizer = get_regularizer(*regularize)
@@ -299,7 +391,7 @@ def DeepLabv3plus(  # pylint: disable=invalid-name
     # make backbone untrainable
     backbone.trainable = False
 
-    x = input_tensor
+    x = backbone.input
     input_size = tf.keras.backend.int_shape(x)[1:3]
 
     logger.debug("Start model definition")
@@ -369,4 +461,4 @@ def DeepLabv3plus(  # pylint: disable=invalid-name
     if debug:
         probabilities = diagnose_wrapper(probabilities, name="probabilities")
 
-    return model(inputs=input_tensor, outputs=probabilities)
+    return model(inputs=backbone.input, outputs=probabilities)
