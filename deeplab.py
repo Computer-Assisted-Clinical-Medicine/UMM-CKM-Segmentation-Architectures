@@ -102,9 +102,44 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
         dilate = ["block_13_depthwise", "block_13_pad"]
         backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
 
+    # DenseNet backbone
+    elif name == "densenet121":
+        layer_low = "pool2_conv"
+        layer_high = "relu"
+        backbone = tf.keras.applications.densenet.DenseNet121(
+            include_top=False, input_tensor=input_backbone
+        )
+        # dilate
+        dilate = ["pool4_pool"]
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
+    elif name == "densenet169":
+        layer_low = "pool2_conv"
+        layer_high = "relu"
+        backbone = tf.keras.applications.densenet.DenseNet169(
+            include_top=False, input_tensor=input_backbone
+        )
+        # dilate
+        dilate = ["pool4_pool"]
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
+    elif name == "densenet201":
+        layer_low = "pool2_conv"
+        layer_high = "relu"
+        backbone = tf.keras.applications.densenet.DenseNet201(
+            include_top=False, input_tensor=input_backbone
+        )
+        # dilate
+        dilate = ["pool4_pool"]
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
+
     else:
         raise NotImplementedError(f"Backbone {name} unknown.")
 
+    assert (
+        backbone.get_layer(layer_low).output_shape[1] == input_tensor.shape[1] // 4
+    ), "Output of the low layer should be 1/16th of the input"
+    assert (
+        backbone.get_layer(layer_high).output_shape[1] == input_tensor.shape[1] // 16
+    ), "Output of the high layer should be 1/16th of the input"
     return backbone, layer_low, layer_high
 
 
@@ -145,10 +180,14 @@ def modify_backbone(backbone: Model, dilate: List[str], input_shape=None) -> Mod
             # change the stride and dilation rate
             layer["config"]["strides"] = (1, 1)
             layer["config"]["dilation_rate"] = (2, 2)
-        elif layer["class_name"] == "MaxPooling2D":
+        # all pooling layers end in Pooling2D
+        elif "Pooling2D" in layer["class_name"]:
             assert layer["config"]["strides"] == (2, 2), "Stride should be 2."
             # change the stride
             layer["config"]["strides"] = (1, 1)
+            # change pool size
+            if layer["config"]["pool_size"] == (2, 2):
+                layer["config"]["pool_size"] = (1, 1)
         elif layer["class_name"] == "ZeroPadding2D":
             if layer["config"]["padding"] == ((1, 1), (1, 1)):
                 # change the padding

@@ -12,7 +12,18 @@ from .densenets import DenseTiramisu
 from .unets import unet, unet_old
 
 
-@pytest.mark.parametrize("backbone", ["resnet50", "resnet101", "resnet152", "mobilenet_v2"])
+@pytest.mark.parametrize(
+    "backbone",
+    [
+        "resnet50",
+        "resnet101",
+        "resnet152",
+        "mobilenet_v2",
+        "densenet121",
+        "densenet169",
+        "densenet201",
+    ],
+)
 @pytest.mark.parametrize("in_channels", [1, 2, 3])
 def test_deeplab(backbone, in_channels):
     input_shape = (256, 256, in_channels)
@@ -120,5 +131,5 @@ if __name__ == "__main__":
             mod,
             in_channels=3,
             input_shape=(256, 256, 2),
-            hyperparameters={"backbone": "mobilenet_v2"},
+            hyperparameters={"backbone": "densenet201"},
         )
