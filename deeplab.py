@@ -61,7 +61,7 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
     # ResNet backbones
     if name == "resnet50":
         # should be with a factor 4 reduced compared to input resolution
-        layer_low = "conv2_block3_out"
+        layer_low = "conv2_block2_out"
         # should be output after removing the last 1 or 2 blocks (with factor 16 compared to input resolution)
         layer_high = "post_relu"
         backbone = tf.keras.applications.ResNet50V2(
@@ -131,6 +131,17 @@ def configure_backbone(name: str, input_tensor: tf.Tensor, replace_input=False):
         dilate = ["pool4_pool"]
         backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
 
+    # EfficientNet backbone
+    elif name == "efficientnetB0":
+        layer_low = "block2b_add"
+        layer_high = "top_activation"
+        backbone = tf.keras.applications.EfficientNetB0(
+            include_top=False, input_tensor=input_backbone
+        )
+        # dilate
+        dilate = ["block6a_dwconv", "block6a_dwconv_pad"]
+        backbone = modify_backbone(backbone, dilate, input_shape=input_tensor.shape)
+
     else:
         raise NotImplementedError(f"Backbone {name} unknown.")
 
@@ -194,9 +205,12 @@ def modify_backbone(backbone: Model, dilate: List[str], input_shape=None) -> Mod
                 layer["config"]["padding"] = ((2, 2), (2, 2))
             elif layer["config"]["padding"] == ((0, 1), (0, 1)):
                 # change the padding
-                layer["config"]["padding"] = ((1, 2), (1, 2))
+                layer["config"]["padding"] = ((2, 2), (2, 2))
+            elif layer["config"]["padding"] == ((1, 2), (1, 2)):
+                # change the padding
+                layer["config"]["padding"] = ((4, 4), (4, 4))
             else:
-                ValueError(f'Padding {layer["config"]["padding"]} not implemented')
+                raise ValueError(f'Padding {layer["config"]["padding"]} not implemented')
         else:
             raise ValueError(f"Layer class {layer['class_name']} unknown.")
 
@@ -221,6 +235,11 @@ def modify_backbone(backbone: Model, dilate: List[str], input_shape=None) -> Mod
         original_layer = backbone.get_layer(layer.name)
         if original_layer.count_params() == layer.count_params():
             layer.set_weights(original_layer.get_weights())
+        # ignore normalization layers
+        elif isinstance(
+            layer, tf.python.keras.layers.preprocessing.normalization.Normalization
+        ):
+            pass
         else:
             missmatched_layers.append(layer)
             logger.info("Weights were not copied for layer %s.", layer.name)

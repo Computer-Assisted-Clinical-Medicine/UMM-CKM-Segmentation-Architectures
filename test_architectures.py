@@ -22,26 +22,27 @@ from .unets import unet, unet_old
         "densenet121",
         "densenet169",
         "densenet201",
+        "efficientnetB0",
     ],
 )
-@pytest.mark.parametrize("in_channels", [1, 2, 3])
+@pytest.mark.parametrize("in_channels", [1, 3])
 def test_deeplab(backbone, in_channels):
     input_shape = (256, 256, in_channels)
 
     hyperparameters = {"backbone": backbone}
 
-    model_creation(DeepLabv3plus, in_channels, input_shape, hyperparameters)
+    model_creation(DeepLabv3plus, input_shape, hyperparameters)
 
 
-@pytest.mark.parametrize("in_channels", [1, 2, 3])
+@pytest.mark.parametrize("in_channels", [1, 3])
 def test_dense_tiramisu(in_channels):
     in_channels = 3
     input_shape = (128, 128, in_channels)
-    model_creation(DenseTiramisu, in_channels, input_shape)
+    model_creation(DenseTiramisu, input_shape)
 
 
 @pytest.mark.parametrize("model", [unet, unet_old])
-@pytest.mark.parametrize("in_channels", [1, 2, 3])
+@pytest.mark.parametrize("in_channels", [1, 3])
 @pytest.mark.parametrize("batch_norm", [True, False])
 @pytest.mark.parametrize("act_func", ["relu", "elu"])
 @pytest.mark.parametrize(
@@ -71,45 +72,32 @@ def test_unet(
         "skip_connect": skip_connect,
         "ratio": 2,  # only important for attention models
     }
-    model_creation(model, in_channels, input_shape, hyperparameters)
+    model_creation(model, input_shape, hyperparameters)
 
 
-def model_creation(
-    model, in_channels, input_shape, hyperparameters={}, do_fit=False, do_plot=False
-):
-    out_channels = 2
-    batch = 4
-    model_built: tf.keras.Model = model(
-        tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
-        out_channels,
-        "DICE",
-        **hyperparameters,
-    )
-    output_shape = model_built.output.shape.as_list()
-    # make sure that the dimensions are right
-    assert output_shape[0] == batch
-    assert np.all(np.array(output_shape[1:-1]) == input_shape[:-1])
-    assert output_shape[-1] == out_channels
+def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
+    # run on CPU
+    with tf.device("/device:CPU:0"):
+        out_channels = 2
+        batch = 4
+        model_built: tf.keras.Model = model(
+            tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
+            out_channels,
+            "DICE",
+            **hyperparameters,
+        )
+        output_shape = model_built.output.shape.as_list()
+        # make sure that the dimensions are right
+        assert output_shape[0] == batch
+        assert np.all(np.array(output_shape[1:-1]) == input_shape[:-1])
+        assert output_shape[-1] == out_channels
 
-    model_built.compile(
-        loss=tf.keras.losses.CategoricalCrossentropy(),
-        metrics="acc",
-        optimizer=tf.keras.optimizers.Adam(),
-    )
+        model_built.compile(
+            loss=tf.keras.losses.CategoricalCrossentropy(),
+            metrics="acc",
+            optimizer=tf.keras.optimizers.Adam(),
+        )
 
-    if do_fit:
-        # create random data with simple thresholds as test data
-        n_samples = batch * 2
-        foreground = np.random.randint(2, size=(n_samples,) + input_shape[:-1] + (1,))
-        background = 1 - foreground
-        labels = np.concatenate([background, foreground], axis=-1)
-
-        samples = np.random.normal(size=foreground.shape[:-1] + (in_channels,))
-        # add label information
-        for channel in range(in_channels):
-            samples[..., channel] += labels[..., 1]
-
-        model_built.fit(x=samples, y=labels, batch_size=batch)
     if do_plot:
         tf.keras.utils.plot_model(model_built, to_file=f"graph-{model.__name__}.png")
 
@@ -129,7 +117,6 @@ if __name__ == "__main__":
     for mod in [DeepLabv3plus]:
         model_creation(
             mod,
-            in_channels=3,
             input_shape=(256, 256, 2),
-            hyperparameters={"backbone": "densenet201"},
+            hyperparameters={"backbone": "resnet50"},
         )
