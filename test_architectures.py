@@ -9,7 +9,7 @@ import tensorflow as tf
 
 from .deeplab import DeepLabv3plus
 from .densenets import DenseTiramisu
-from .unets import unet, unet_old
+from .unets import unet
 
 
 @pytest.mark.parametrize(
@@ -41,22 +41,20 @@ def test_dense_tiramisu(in_channels):
     model_creation(DenseTiramisu, input_shape)
 
 
-@pytest.mark.parametrize("model", [unet, unet_old])
 @pytest.mark.parametrize("in_channels", [1, 3])
 @pytest.mark.parametrize("batch_norm", [True, False])
 @pytest.mark.parametrize("act_func", ["relu", "elu"])
-@pytest.mark.parametrize(
-    "name", ["Unet", "SEUnet", "SEAttnUnet", "CBAMUnet", "CBAMAttnUnet", "AttnUnet"]
-)
+@pytest.mark.parametrize("attention", [True, False])
+@pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM"])
 @pytest.mark.parametrize("res_connect", [True, False])
 @pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
 @pytest.mark.parametrize("skip_connect", [True, False])
 def test_unet(
-    model,
     in_channels,
     batch_norm,
     act_func,
-    name,
+    attention,
+    encoder_attention,
     res_connect,
     res_connect_type,
     skip_connect,
@@ -66,13 +64,14 @@ def test_unet(
     hyperparameters = {
         "batch_normalization": batch_norm,
         "activation": act_func,
-        "name": name,
+        "attention": attention,
+        "encoder_attention": encoder_attention,
         "res_connect": res_connect,
         "res_connect_type": res_connect_type,
         "skip_connect": skip_connect,
         "ratio": 2,  # only important for attention models
     }
-    model_creation(model, input_shape, hyperparameters)
+    model_creation(unet, input_shape, hyperparameters)
 
 
 def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
