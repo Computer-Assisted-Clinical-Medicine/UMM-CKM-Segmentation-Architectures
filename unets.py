@@ -182,7 +182,7 @@ def decoder_block(
             ), "If using attention, also provide a gate function"
             gate = tf.identity(x_before_upscale)
             gate = gate_signal(gate)
-            attn = attention(x_skip, g=gate)
+            attn = attention(x_skip, gate=gate)
             x = Concatenate()([x, attn])
         else:
             x = Concatenate()([x, x_skip])
@@ -210,7 +210,7 @@ def unet(
     padding="SAME",
     activation="relu",
     name="Unet",
-    ratio=1,
+    ratio=2,
     dilation_rate=1,
     cross_hair=False,
     res_connect=True,
@@ -281,7 +281,7 @@ def unet(
         The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
         'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet'. By default: Unet.
     ratio : int, optional
-        The ratio by which features are reduced in SE or CBAM channel attention, by default 1
+        The ratio by which features are reduced in SE or CBAM channel attention, by default 2
     dilation_rate : 1, optional
         dilation rate for convolutions. By default: 1.
     cross_hair : bool, optional
@@ -302,8 +302,7 @@ def unet(
     tf.keras.Model
         A model specified in the name argument.
     """
-    available_models = [
-        "Unet",
+    special_models = [
         "SEUnet",
         "SEAttnUnet",
         "CBAMUnet",
@@ -311,8 +310,7 @@ def unet(
         "AttnUnet",
     ]
     # see if the parameters should be inferred
-
-    if name in available_models:
+    if name in special_models:
         attention = bool(name in ["AttnUnet", "SEAttnUnet", "CBAMAttnUnet"])
         if name in ["SEUnet", "SEAttnUnet"]:
             encoder_attention = "SE"
