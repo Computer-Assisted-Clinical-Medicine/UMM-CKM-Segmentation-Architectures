@@ -10,6 +10,7 @@ import tensorflow as tf
 from .deeplab import DeepLabv3plus
 from .densenets import DenseTiramisu
 from .unets import unet
+from .hrnet import HRNet
 
 
 @pytest.mark.parametrize(
@@ -59,8 +60,8 @@ def test_unet(
     res_connect_type,
     skip_connect,
 ):
-    in_channels = 3
-    input_shape = (128, 128, in_channels)
+    in_channels = 1
+    input_shape = (96, 96, in_channels)
     hyperparameters = {
         "batch_normalization": batch_norm,
         "activation": act_func,
@@ -72,6 +73,17 @@ def test_unet(
         "ratio": 2,  # only important for attention models
     }
     model_creation(unet, input_shape, hyperparameters)
+
+@pytest.mark.parametrize("in_channels", [1, 3])
+@pytest.mark.parametrize("loss", ['CEL'])
+def test_HRNet(
+    in_channels,
+    loss='CEL',
+):
+    in_channels = 1
+    input_shape = (96, 96, in_channels)
+
+    model_creation(HRNet, input_shape, hyperparameters)
 
 
 def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
@@ -113,9 +125,10 @@ if __name__ == "__main__":
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    for mod in [DeepLabv3plus]:
+    for mod in [HRNet, unet]:
         model_creation(
             mod,
-            input_shape=(256, 256, 2),
-            hyperparameters={"backbone": "resnet50"},
+            input_shape=(96, 96, 1),
+            hyperparameters={"loss": "CEL"},
+            do_plot=True
         )
