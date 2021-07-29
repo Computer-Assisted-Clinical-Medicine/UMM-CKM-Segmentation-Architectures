@@ -2,26 +2,25 @@
 Implements HR-Net from https://arxiv.org/abs/1904.04514v1
 """
 from functools import partial
-from typing import Callable, Optional, Tuple
+from typing import Callable
 
 import tensorflow as tf
-from tensorflow.keras.layers import Add, Concatenate
+from tensorflow.keras.layers import Concatenate
 
 from . import layers
-# import layers
-from .utils import get_regularizer, select_final_activation
-# from utils import get_regularizer, select_final_activation
 
-import numpy as np
+from .utils import get_regularizer, select_final_activation
+
+# pylint: disable=missing-function-docstring
 
 
 def convolution_block(
-        x: tf.Tensor,
-        conv: Callable,
-        n_filter: int,
-        res_connect: bool = False,
-        strides: int = 1,
-        n_conv: int = 2
+    x: tf.Tensor,
+    conv: Callable,
+    n_filter: int,
+    res_connect: bool = False,
+    strides: int = 1,
+    n_conv: int = 2,
 ) -> tf.Tensor:
 
     for _ in range(n_conv):
@@ -30,12 +29,7 @@ def convolution_block(
     return conv_x
 
 
-def downsample(
-        x: tf.Tensor,
-        n_down: int,
-        conv: Callable,
-        strides: int = 2
-) -> tf.Tensor:
+def downsample(x: tf.Tensor, n_down: int, conv: Callable, strides: int = 2) -> tf.Tensor:
 
     down_scale = x
     # n_filters = tf.shape(x).numpy()[-1]
@@ -50,11 +44,11 @@ def downsample(
 
 
 def upsample(
-        x: tf.Tensor,
-        n_up: int,
-        conv: Callable,
-        size: tuple = (2, 2),
-        interpolation: str = 'bilinear'
+    x: tf.Tensor,
+    n_up: int,
+    conv: Callable,
+    size: tuple = (2, 2),
+    interpolation: str = "bilinear",
 ) -> tf.Tensor:
 
     up_scale = x
@@ -63,7 +57,9 @@ def upsample(
     multi_scale = []
     for _ in range(n_up):
         n_filters = n_filters // 2
-        up_scale = tf.keras.layers.UpSampling2D(size=size, interpolation=interpolation)(up_scale)
+        up_scale = tf.keras.layers.UpSampling2D(size=size, interpolation=interpolation)(
+            up_scale
+        )
         up_scale = conv(up_scale, n_filter=n_filters, stride=1)
         multi_scale.append(up_scale)
 
@@ -71,31 +67,27 @@ def upsample(
 
 
 def final_upsample(
-        x: tf.Tensor,
-        n_times: int,
-        interpolation: str = 'bilinear'
+    x: tf.Tensor, n_times: int, interpolation: str = "bilinear"
 ) -> tf.Tensor:
 
-    size = (n_times * 2, n_times *2)
+    size = (n_times * 2, n_times * 2)
     up_scale = tf.keras.layers.UpSampling2D(size=size, interpolation=interpolation)(x)
 
     return up_scale
 
 
-def add_layer(
-        list_x: list
-) -> tf.Tensor:
-    
+def add_layer(list_x: list) -> tf.Tensor:
+
     add = tf.math.add_n(list_x)
 
     return add
 
 
-def HRNet(
+def HRNet(  # pylint: disable=invalid-name
     input_tensor: tf.Tensor,
     out_channels: int,
     loss: str,
-    n_filter=[16, 32, 64, 128],
+    n_filter=(16, 32, 64, 128),
     kernel_dims=3,
     batch_normalization=True,
     use_bias=False,
@@ -106,13 +98,11 @@ def HRNet(
     dilation_rate=1,
     cross_hair=False,
     name="HRNet",
-    **kwargs
+    **kwargs,
 ) -> tf.keras.Model:
 
-    if loss == 'COS':
-        l2_norm = True
-    else:
-        l2_norm = False
+    l2_norm = loss == "COS"
+
     regularizer = get_regularizer(*regularize)
     conv = partial(
         layers.convolutional,
@@ -127,22 +117,12 @@ def HRNet(
         cross_hair=cross_hair,
     )
 
-    conv_block = partial(
-        convolution_block,
-        conv=conv,
-        n_conv=2
-    )
-    down = partial(
-        downsample,
-        conv=conv
-    )
-    up = partial(
-        upsample,
-        conv=conv
-    )
+    conv_block = partial(convolution_block, conv=conv, n_conv=2)
+    down = partial(downsample, conv=conv)
+    up = partial(upsample, conv=conv)
 
     # stage 1 (Nomenclature: e.g. 1_2=first depth 2nd block)
-    x1_1 = conv_block(input_tensor, conv=conv, n_filter=n_filter[0])
+    x1_1 = conv_block(input_tensor, n_filter=n_filter[0])
     down_x1_1 = down(x1_1, n_down=1)
 
     x1_1 = conv(x1_1, n_filter=n_filter[0], stride=1)
@@ -209,9 +189,16 @@ def HRNet(
 
     # final output layer
     logits = layers.last(
-        final_block, kernel_dims=1, n_filter=out_channels, stride=1, dilation_rate=dilation_rate,
-        padding=padding, act_func=select_final_activation(loss, out_channels), use_bias=False,
-        regularizer=regularizer, l2_normalize=l2_norm,
+        final_block,
+        kernel_dims=1,
+        n_filter=out_channels,
+        stride=1,
+        dilation_rate=dilation_rate,
+        padding=padding,
+        act_func=select_final_activation(loss, out_channels),
+        use_bias=False,
+        regularizer=regularizer,
+        l2_normalize=l2_norm,
     )
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)
@@ -228,12 +215,3 @@ def HRNet(
 #             optimizer=tf.keras.optimizers.Adam(),
 #         )
 # tf.keras.utils.plot_model(model, to_file=model_name, show_shapes=True)
-
-
-
-
-
-
-
-
-

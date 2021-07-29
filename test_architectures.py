@@ -74,6 +74,7 @@ def test_unet(
     }
     model_creation(unet, input_shape, hyperparameters)
 
+
 @pytest.mark.parametrize("in_channels", [1, 3])
 def test_HRNet(
     in_channels,
@@ -81,7 +82,7 @@ def test_HRNet(
     in_channels = 1
     input_shape = (96, 96, in_channels)
 
-    model_creation(HRNet, input_shape, hyperparameters)
+    model_creation(HRNet, input_shape)
 
 
 def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
@@ -124,8 +125,4 @@ if __name__ == "__main__":
     logger.addHandler(sh)
 
     for mod in [HRNet, unet]:
-        model_creation(
-            mod,
-            input_shape=(96, 96, 1),
-            do_plot=False
-        )
+        model_creation(mod, input_shape=(96, 96, 1), do_plot=False)
