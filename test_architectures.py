@@ -75,10 +75,8 @@ def test_unet(
     model_creation(unet, input_shape, hyperparameters)
 
 @pytest.mark.parametrize("in_channels", [1, 3])
-@pytest.mark.parametrize("loss", ['CEL'])
 def test_HRNet(
     in_channels,
-    loss='CEL',
 ):
     in_channels = 1
     input_shape = (96, 96, in_channels)
@@ -129,6 +127,5 @@ if __name__ == "__main__":
         model_creation(
             mod,
             input_shape=(96, 96, 1),
-            hyperparameters={"loss": "CEL"},
-            do_plot=True
+            do_plot=False
         )
