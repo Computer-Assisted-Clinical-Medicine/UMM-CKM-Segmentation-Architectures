@@ -1,7 +1,11 @@
 # Segmentation Architectures
 
 This repository contains multiple architectures for segmentation. The architectures are:
-- UNet (from https://arxiv.org/abs/1505.04597)
+- UNet (from https://arxiv.org/abs/1505.04597) with a lot of additions, which include
+  - Residual connections
+  - Attention
+  - Squeeze and Excitation blocks
+  - CBAM blocks
 - Deeplabv3+ (from https://arxiv.org/abs/1802.02611v2)
 - DeepTiramisu (from https://arxiv.org/abs/1611.09326)
 
@@ -35,7 +39,7 @@ pre-commit run --all-files
 
 ## Running the tests
 
-- The test can be run using pytest and will create a test_data directory, where the created test data will be saved.
+- The test can be run using pytest
 - They can also be run by hand using python -m SegmentationArchitectures.test_architectures
 
 ### Running the training
