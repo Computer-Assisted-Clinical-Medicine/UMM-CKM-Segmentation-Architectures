@@ -257,6 +257,7 @@ def unet(
          -None for no attention
          -SE for squeeze and excitation
          -CBAM for Convolutional Block Attention Module
+         -PSA for polarized self attention
     kernel_dims : int
         shape of all the convolution filter, by default: 3.
     stride : int, optional
