@@ -46,7 +46,7 @@ def test_dense_tiramisu(in_channels):
 @pytest.mark.parametrize("batch_norm", [True, False])
 @pytest.mark.parametrize("act_func", ["relu", "elu"])
 @pytest.mark.parametrize("attention", [True, False])
-@pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM"])
+@pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM", "PSA"])
 @pytest.mark.parametrize("res_connect", [True, False])
 @pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
 @pytest.mark.parametrize("skip_connect", [True, False])
@@ -82,7 +82,7 @@ def test_HRNet(
     in_channels = 1
     input_shape = (96, 96, in_channels)
 
-    model_creation(HRNet, input_shape)
+    model_creation(HRNet, input_shape, hyperparameters)
 
 
 def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
@@ -124,5 +124,5 @@ if __name__ == "__main__":
     sh.setFormatter(formatter)
     logger.addHandler(sh)
 
-    for mod in [HRNet, unet]:
-        model_creation(mod, input_shape=(96, 96, 1), do_plot=False)
+    for mod in [unet]:
+        model_creation(mod, input_shape=(96, 96, 1), do_plot=True)

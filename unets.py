@@ -1,6 +1,8 @@
 """
 Implements multiple different kinds of UNets
 """
+# pylint: disable=invalid-name
+# pylint: disable=duplicate-code
 from functools import partial
 from typing import Callable, Optional, Tuple
 
@@ -308,6 +310,7 @@ def unet(
         "CBAMUnet",
         "CBAMAttnUnet",
         "AttnUnet",
+        "PSAUnet",
     ]
     # see if the parameters should be inferred
     if name in special_models:
@@ -316,6 +319,8 @@ def unet(
             encoder_attention = "SE"
         elif name in ["CBAMUnet", "CBAMAttnUnet"]:
             encoder_attention = "CBAM"
+        elif name in ["PSAUnet"]:
+            encoder_attention = "PSA"
 
     # check the rate if SE or CBAM is used
     if encoder_attention is not None:
@@ -374,6 +379,7 @@ def unet(
     )
     se_block = partial(layers.se_block, act_func=activation, ratio=ratio)
     cbam_block = partial(layers.cbam_block, ratio=ratio)
+    psa_block = partial(layers.psa_attention_block, strategy="parallel")
 
     # input layer
     x = input_tensor
@@ -384,6 +390,8 @@ def unet(
         encoder_attention_func = se_block
     elif encoder_attention == "CBAM":
         encoder_attention_func = cbam_block
+    elif encoder_attention == "PSA":
+        encoder_attention_func = psa_block
     else:
         raise ValueError(f"Unknown encoder attention {encoder_attention}")
     # collect the output for skip connections

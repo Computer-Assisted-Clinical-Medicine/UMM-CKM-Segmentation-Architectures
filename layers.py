@@ -1,5 +1,6 @@
 """This module contains multiple layers, which are mostly used the UNets.
 """
+# pylint: disable=invalid-name
 import logging
 from typing import Optional, Tuple, Union
 
@@ -285,6 +286,76 @@ def spatial_attention(input_feature: tf.Tensor) -> tf.Tensor:
         cbam_feature = Permute((3, 1, 2))(cbam_feature)
 
     return multiply([input_feature, cbam_feature])
+
+
+def psa_channel_attention(input_feature: tf.Tensor) -> tf.Tensor:
+    """Polarized self attention channel block from https://arxiv.org/pdf/2107.00782v1.pdf"""
+    channels = tf.shape(input_feature).numpy()[-1]
+    hw = tf.shape(input_feature).numpy()[-2] * tf.shape(input_feature).numpy()[-3]
+
+    wq = tf.keras.layers.Conv2D(filters=1, kernel_size=1, strides=1)(
+        input_feature
+    )  # h x w x 1
+    wv = tf.keras.layers.Conv2D(filters=channels // 2, kernel_size=1, strides=1)(
+        input_feature
+    )  # h x w x c/2
+
+    sigma2 = tf.reshape(wq, (hw, 1, 1))  # hw x 1 x 1
+    fsm = tf.keras.layers.Softmax()(sigma2)  # hw x 1 x 1
+    sigma1 = tf.reshape(wv, (channels // 2, hw))  # c/2 x hw
+
+    prod = tf.tensordot(sigma1, fsm, axes=1)  # c/2 x 1 x 1
+    prod = tf.reshape(prod, (1, 1, channels // 2))  # 1 x 1 x c/2
+
+    wz = tf.keras.layers.Conv2D(filters=channels, kernel_size=1)(prod)  # 1 x 1 x c
+    layer_norm = tf.keras.layers.LayerNormalization(axis=-1)(wz)
+    fsg = tf.math.sigmoid(layer_norm)  # 1 x 1 x c
+
+    return multiply([input_feature, fsg])
+
+
+def psa_spatial_attention(input_feature: tf.Tensor) -> tf.Tensor:
+    """Polarized self attention spatial block from https://arxiv.org/pdf/2107.00782v1.pdf"""
+    channels = tf.shape(input_feature).numpy()[-1]
+    h, w = tf.shape(input_feature).numpy()[-2], tf.shape(input_feature).numpy()[-3]
+    hw = tf.shape(input_feature).numpy()[-2] * tf.shape(input_feature).numpy()[-3]
+
+    wv = tf.keras.layers.Conv2D(filters=channels // 2, kernel_size=1, strides=1)(
+        input_feature
+    )  # h x w x c/2
+    wq = tf.keras.layers.Conv2D(filters=channels // 2, kernel_size=1, strides=1)(
+        input_feature
+    )  # h x w x c/2
+
+    sigma2 = tf.reshape(wv, (channels // 2, hw))  # c/2 x hw
+    fgp = GlobalAveragePooling2D()(wq)  # c/2
+    sigma1 = tf.reshape(fgp, (1, channels // 2))
+    fsm = tf.keras.layers.Softmax()(sigma1)  # 1 x c/2
+
+    prod = tf.tensordot(fsm, sigma2, axes=1)  # 1 x hw
+    prod = tf.reshape(prod, (h, w, 1))
+
+    fsg = tf.math.sigmoid(prod)
+
+    return multiply([input_feature, fsg])
+
+
+def psa_attention_block(
+    input_feature: tf.Tensor, strategy: str = "parallel", **kwargs
+) -> tf.Tensor:
+    """Polarized self attention block from https://arxiv.org/pdf/2107.00782v1.pdf"""
+    if strategy == "parallel":
+        ch_attn = psa_channel_attention(input_feature=input_feature)
+        sp_attn = psa_spatial_attention(input_feature=input_feature)
+        final_attn = add()([ch_attn, sp_attn])
+    elif strategy == "sequential":
+        raise NotImplementedError(
+            "sequential strategy not yet implemented, please use parallel strategy"
+        )
+    else:
+        raise ValueError("Please select strategy from ['parallel', 'sequential']")
+
+    return final_attn
 
 
 def convolutional(

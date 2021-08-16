@@ -1,6 +1,8 @@
 """
 Implements HR-Net from https://arxiv.org/abs/1904.04514v1
 """
+# pylint: disable=invalid-name, redundant-keyword-arg
+# pylint: disable=duplicate-code
 from functools import partial
 from typing import Callable
 
@@ -9,9 +11,10 @@ from tensorflow.keras.layers import Concatenate
 
 from . import layers
 
+# import layers
 from .utils import get_regularizer, select_final_activation
 
-# pylint: disable=missing-function-docstring
+# from utils import get_regularizer, select_final_activation
 
 
 def convolution_block(
@@ -22,6 +25,7 @@ def convolution_block(
     strides: int = 1,
     n_conv: int = 2,
 ) -> tf.Tensor:
+    """does convolution n number of times"""
 
     for _ in range(n_conv):
         conv_x = conv(x, n_filter=n_filter, stride=strides)
@@ -29,8 +33,13 @@ def convolution_block(
     return conv_x
 
 
-def downsample(x: tf.Tensor, n_down: int, conv: Callable, strides: int = 2) -> tf.Tensor:
-
+def downsample(
+    x: tf.Tensor,
+    n_down: int,
+    conv: Callable,
+    strides: int = 2,
+) -> tf.Tensor:
+    """downsamples the input n number of times by factor of 2"""
     down_scale = x
     # n_filters = tf.shape(x).numpy()[-1]
     n_filters = x.shape[-1]
@@ -50,7 +59,7 @@ def upsample(
     size: tuple = (2, 2),
     interpolation: str = "bilinear",
 ) -> tf.Tensor:
-
+    """upsamples input n number of times by factor of 2"""
     up_scale = x
     # n_filters = tf.shape(x).numpy()[-1]
     n_filters = x.shape[-1]
@@ -69,7 +78,7 @@ def upsample(
 def final_upsample(
     x: tf.Tensor, n_times: int, interpolation: str = "bilinear"
 ) -> tf.Tensor:
-
+    """final upsample layer"""
     size = (n_times * 2, n_times * 2)
     up_scale = tf.keras.layers.UpSampling2D(size=size, interpolation=interpolation)(x)
 
@@ -77,13 +86,13 @@ def final_upsample(
 
 
 def add_layer(list_x: list) -> tf.Tensor:
-
+    """add the tensors in the list"""
     add = tf.math.add_n(list_x)
 
     return add
 
 
-def HRNet(  # pylint: disable=invalid-name
+def hrnet(
     input_tensor: tf.Tensor,
     out_channels: int,
     loss: str,
@@ -100,9 +109,9 @@ def HRNet(  # pylint: disable=invalid-name
     name="HRNet",
     **kwargs,
 ) -> tf.keras.Model:
+    """Implements HRNet"""
 
-    l2_norm = loss == "COS"
-
+    l2_norm = bool(loss == "COS")
     regularizer = get_regularizer(*regularize)
     conv = partial(
         layers.convolutional,
@@ -122,7 +131,7 @@ def HRNet(  # pylint: disable=invalid-name
     up = partial(upsample, conv=conv)
 
     # stage 1 (Nomenclature: e.g. 1_2=first depth 2nd block)
-    x1_1 = conv_block(input_tensor, n_filter=n_filter[0])
+    x1_1 = conv_block(input_tensor, conv=conv, n_filter=n_filter[0])
     down_x1_1 = down(x1_1, n_down=1)
 
     x1_1 = conv(x1_1, n_filter=n_filter[0], stride=1)
