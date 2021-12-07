@@ -10,7 +10,8 @@ import tensorflow as tf
 from .deeplab import DeepLabv3plus
 from .densenets import DenseTiramisu
 from .unets import unet
-from .hrnet import HRNet
+
+# from .hrnet import HRNet
 
 
 @pytest.mark.parametrize(
@@ -42,14 +43,48 @@ def test_dense_tiramisu(in_channels):
     model_creation(DenseTiramisu, input_shape)
 
 
-@pytest.mark.parametrize("in_channels", [1, 3])
-@pytest.mark.parametrize("batch_norm", [True, False])
-@pytest.mark.parametrize("act_func", ["relu", "elu"])
-@pytest.mark.parametrize("attention", [True, False])
-@pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM", "PSA"])
-@pytest.mark.parametrize("res_connect", [True, False])
-@pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
-@pytest.mark.parametrize("skip_connect", [True, False])
+# @pytest.mark.parametrize("in_channels", [1, 3])
+# @pytest.mark.parametrize("batch_norm", [True, False])
+# @pytest.mark.parametrize("act_func", ["relu", "elu"])
+# @pytest.mark.parametrize("attention", [True, False])
+# @pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM", "PSA"])
+# @pytest.mark.parametrize("res_connect", [True, False])
+# @pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
+# @pytest.mark.parametrize("skip_connect", [True, False])
+# def test_unet(
+#     in_channels,
+#     batch_norm,
+#     act_func,
+#     attention,
+#     encoder_attention,
+#     res_connect,
+#     res_connect_type,
+#     skip_connect,
+# ):
+#     in_channels = 1
+#     input_shape = (96, 96, in_channels)
+#     hyperparameters = {
+#         "batch_normalization": batch_norm,
+#         "activation": act_func,
+#         "attention": attention,
+#         "encoder_attention": encoder_attention,
+#         "res_connect": res_connect,
+#         "res_connect_type": res_connect_type,
+#         "skip_connect": skip_connect,
+#         "ratio": 2,  # only important for attention models
+#     }
+#     model_creation(unet, input_shape, hyperparameters)
+
+
+@pytest.mark.parametrize("in_channels", [1])
+@pytest.mark.parametrize("batch_norm", [True])
+@pytest.mark.parametrize("act_func", ["elu"])
+@pytest.mark.parametrize("attention", [False])
+@pytest.mark.parametrize("encoder_attention", [None])
+@pytest.mark.parametrize("res_connect", [True])
+@pytest.mark.parametrize("res_connect_type", ["skip_first"])
+@pytest.mark.parametrize("skip_connect", [True])
+@pytest.mark.parametrize("name", ["UCTransNet", "Unet"])
 def test_unet(
     in_channels,
     batch_norm,
@@ -59,6 +94,7 @@ def test_unet(
     res_connect,
     res_connect_type,
     skip_connect,
+    name,
 ):
     in_channels = 1
     input_shape = (96, 96, in_channels)
@@ -70,26 +106,27 @@ def test_unet(
         "res_connect": res_connect,
         "res_connect_type": res_connect_type,
         "skip_connect": skip_connect,
+        "name": name,
         "ratio": 2,  # only important for attention models
     }
     model_creation(unet, input_shape, hyperparameters)
 
 
-@pytest.mark.parametrize("in_channels", [1, 3])
-def test_HRNet(
-    in_channels,
-):
-    in_channels = 1
-    input_shape = (96, 96, in_channels)
+# @pytest.mark.parametrize("in_channels", [1, 3])
+# def test_HRNet(
+#     in_channels,
+# ):
+#     in_channels = 1
+#     input_shape = (96, 96, in_channels)
+#
+#     model_creation(HRNet, input_shape, hyperparameters)
 
-    model_creation(HRNet, input_shape, hyperparameters)
 
-
-def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
+def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=True):
     # run on CPU
     with tf.device("/device:CPU:0"):
         out_channels = 2
-        batch = 4
+        batch = 8
         model_built: tf.keras.Model = model(
             tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
             out_channels,
@@ -101,7 +138,19 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
         assert output_shape[0] == batch
         assert np.all(np.array(output_shape[1:-1]) == input_shape[:-1])
         assert output_shape[-1] == out_channels
-
+        # model_built.summary()
+        trainableParams = np.sum(
+            [np.prod(v.get_shape()) for v in model_built.trainable_weights]
+        )
+        nonTrainableParams = np.sum(
+            [np.prod(v.get_shape()) for v in model_built.non_trainable_weights]
+        )
+        print(
+            "\n model:",
+            hyperparameters["name"],
+            "has total weights:",
+            trainableParams + nonTrainableParams,
+        )
         model_built.compile(
             loss=tf.keras.losses.CategoricalCrossentropy(),
             metrics="acc",

@@ -4,13 +4,63 @@ Implements multiple different kinds of UNets
 # pylint: disable=invalid-name
 # pylint: disable=duplicate-code
 from functools import partial
-from typing import Callable, Optional, Tuple
+from typing import Callable, Optional, Tuple, List
 
 import tensorflow as tf
 from tensorflow.keras.layers import Add, Concatenate
 
 from . import layers
 from .utils import get_regularizer, select_final_activation
+from .uctransnet import n_layer_transformer, reconstruct, cca_decoder_fusion
+
+
+# transformer attention
+def calculate_and_reconstruct_transformer_attentions(
+    input_skip_features: List[tf.Tensor],
+    patch_sizes: List[int] = [8, 4, 2, 1],
+    n_heads: int = 2,
+    l_layers: int = 2,
+    mlp_units: List[int] = [4, 8, 16, 32],
+    kernel_size: int = 1,
+) -> List[tf.Tensor]:
+    """Calls functions n_layer_transformer to get attention features and then reconstruct them to the same shape as
+    input skip connection features for later fusion with decoder features.
+
+    Parameters
+    ----------
+    input_skip_features : tf.Tensor
+        All the skip connection features from the Unet encoder as list.
+    patch_sizes : int
+        The size of patches to be used to create each embedding. The sizes are such that each embedding has same
+        dimension in the 2nd axis (i.e. h//patch_size * w//patch_size).
+    n_heads : int
+        Number of heads in each transformer layer.
+    l_layers : int
+        Number of transformer layers.
+    mlp_units : int
+        Number of dense units used in the mlp function.
+    kernel_size : int
+        Used for 1D convolution in reconstruct function.
+
+    Returns
+    -------
+    tf.Tensor
+        The output list of tensors ready to be fused with decoder features.
+    """
+    transformer_outputs = n_layer_transformer(
+        input_features=input_skip_features,
+        patch_sizes=patch_sizes,
+        n_heads=n_heads,
+        l_layers=l_layers,
+        mlp_units=mlp_units,
+    )
+    transformer_reconstructed_list = reconstruct(
+        skip_connections=input_skip_features,
+        input_attns=transformer_outputs,
+        kernel_size=kernel_size,
+    )
+
+    return transformer_reconstructed_list
 
 
 def conv_block(
@@ -133,6 +183,7 @@ def decoder_block(
     upscale: Callable,
     attention: Optional[Callable],
     gate_signal: Optional[Callable],
+    transformer_fusion: bool,
     n_conv: int,
     n_filter: int,
     res_connect: bool,
@@ -158,6 +209,8 @@ def decoder_block(
         The attention function, should take x and n_filter as arguments
     gate_signal : Callable
         The gate_signal function, should take x as argument
+    transformer_fusion: bool
+        Implemented when using UCTransNet for concatenating corresponding transformer output and decoder feature
     n_conv : int
         How many convolutions should be performed
     n_filter : int
@@ -186,6 +239,10 @@ def decoder_block(
             gate = gate_signal(gate)
             attn = attention(x_skip, gate=gate)
             x = Concatenate()([x, attn])
+        elif transformer_fusion:
+            x = cca_decoder_fusion(
+                decoder_feature=x, transformer_output=x_skip
+            )  # returns concatenated features of i/p
         else:
             x = Concatenate()([x, x_skip])
     # No attention in the conv block
@@ -201,6 +258,8 @@ def unet(
     n_convolutions=(2, 2, 3, 3, 3),
     attention=False,
     encoder_attention=None,
+    n_heads=2,
+    l_layers=2,
     kernel_dims=3,
     stride=1,
     batch_normalization=True,
@@ -222,10 +281,11 @@ def unet(
 ) -> tf.keras.Model:
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
-    (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
-    attention modules (CBAM - https://arxiv.org/abs/1807.06521) and Squeeze & excitation blocks
+    (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet, SEAttnUnet and UCTransNet. Where Convolutional
+    block attention modules (CBAM - https://arxiv.org/abs/1807.06521) and Squeeze & excitation blocks
     (SE - https://arxiv.org/abs/1709.01507) are added to the encoder of U-Net or Attention U-Net to obtain CBAM and SE
-    attention U-Nets respectively.
+    attention U-Nets respectively. The UCTransUnet is based on channel attention based on transformers
+    (https://arxiv.org/pdf/2109.04335.pdf).
 
     If a recognized name is provided (besides the standard name), the  attention parameters
     will be set accordingly. Possible names are:
@@ -234,6 +294,7 @@ def unet(
      - SEAttnUnet
      - CBAMUnet
      - CBAMAttnUnet
+     - UCTransNet
 
     Parameters
     ----------
@@ -258,6 +319,10 @@ def unet(
          -SE for squeeze and excitation
          -CBAM for Convolutional Block Attention Module
          -PSA for polarized self attention
+    n_heads : int, optional
+        Number of heads in each transformer layer. Only used if network name is UCTransNet
+    l_layers : int, optional
+        Number of layers of transformer. Only used if network name is UCTransNet
     kernel_dims : int
         shape of all the convolution filter, by default: 3.
     stride : int, optional
@@ -282,7 +347,7 @@ def unet(
         The activation used after each layer. By default: 'relu'.
     name : str, optional
         The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
-        'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet'. By default: Unet.
+        'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet', 'UCTransNEt'. By default: Unet.
     ratio : int, optional
         The ratio by which features are reduced in SE or CBAM channel attention, by default 2
     dilation_rate : 1, optional
@@ -312,6 +377,7 @@ def unet(
         "CBAMAttnUnet",
         "AttnUnet",
         "PSAUnet",
+        "UCTransNet",
     ]
     # see if the parameters should be inferred
     if name in special_models:
@@ -322,6 +388,8 @@ def unet(
             encoder_attention = "CBAM"
         elif name in ["PSAUnet"]:
             encoder_attention = "PSA"
+        elif name in ["UCTransNet"]:
+            transformer_fusion = True  # allows the decoder block to fuse transformer outputs and decoder features
 
     # check the rate if SE or CBAM is used
     if encoder_attention is not None:
@@ -331,10 +399,15 @@ def unet(
     if len(n_filter) != len(n_convolutions):
         raise ValueError("n_filter should have the same length as n_convolutions.")
 
+    # set l_normalize true if cos loss is used
+    if loss == "COS":
+        l2_normalize = True
+    else:
+        l2_normalize = False
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
+    # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
     conv = partial(
         layers.convolutional,
         kernel_dims=kernel_dims,
@@ -411,6 +484,16 @@ def unet(
         )
         skip_connections.append(x_skip)
 
+    if (
+        name == "UCTransNet"
+    ):  # apply channel transformer and output reconstructed attention in same shape as skip conns
+        transformer_reconstructed_features = (
+            calculate_and_reconstruct_transformer_attentions(
+                input_skip_features=skip_connections, n_heads=n_heads, l_layers=l_layers
+            )
+        )
+        skip_connections = transformer_reconstructed_features
+
     # bottleneck layer
     x = conv_block(
         x=x,
@@ -445,6 +528,7 @@ def unet(
             upscale=upscale,
             attention=decode_attention_inter_shape,
             gate_signal=gate_signal_decoder,
+            transformer_fusion=transformer_fusion,
             n_conv=n_conv,
             n_filter=filters,
             res_connect=res_connect,
@@ -462,7 +546,7 @@ def unet(
         act_func=select_final_activation(loss, out_channels),
         use_bias=False,
         regularizer=regularizer,
-        l2_normalize=False,
+        l2_normalize=l2_normalize,
     )
 
     return tf.keras.Model(inputs=input_tensor, outputs=logits)
