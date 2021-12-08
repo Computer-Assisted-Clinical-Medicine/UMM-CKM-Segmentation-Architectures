@@ -555,6 +555,9 @@ def upscale(
     @todo BI_INTER, unpool_param
     """
 
+    if not isinstance(stride, tuple):
+        stride = (stride,) * (tf.rank(x).numpy() - 2)
+
     if upscale_method == "TRANS_CONV":
 
         strides = np.multiply(stride, 2)
@@ -575,7 +578,6 @@ def upscale(
             )
             x = convolutional_layer(x)
         elif tf.rank(x).numpy() == 5:
-
             convolutional_layer = tf.keras.layers.Conv3DTranspose(
                 filters=n_filter,
                 kernel_size=kernel_dims,

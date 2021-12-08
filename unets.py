@@ -17,10 +17,10 @@ from .uctransnet import n_layer_transformer, reconstruct, cca_decoder_fusion
 # transformer attention
 def calculate_and_reconstruct_transformer_attentions(
     input_skip_features: List[tf.Tensor],
-    patch_sizes: List[int] = [8, 4, 2, 1],
+    patch_sizes: List[int] = (8, 4, 2, 1),
     n_heads: int = 2,
     l_layers: int = 2,
-    mlp_units: List[int] = [4, 8, 16, 32],
+    mlp_units: List[int] = (4, 8, 16, 32),
     kernel_size: int = 1,
 ) -> List[tf.Tensor]:
     """Calls functions n_layer_transformer to get attention features and then reconstruct them to the same shape as
@@ -380,6 +380,7 @@ def unet(
         "UCTransNet",
     ]
     # see if the parameters should be inferred
+    transformer_fusion = False
     if name in special_models:
         attention = bool(name in ["AttnUnet", "SEAttnUnet", "CBAMAttnUnet"])
         if name in ["SEUnet", "SEAttnUnet"]:
@@ -400,10 +401,7 @@ def unet(
         raise ValueError("n_filter should have the same length as n_convolutions.")
 
     # set l_normalize true if cos loss is used
-    if loss == "COS":
-        l2_normalize = True
-    else:
-        l2_normalize = False
+    l2_normalize = loss == "COS"
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
