@@ -136,6 +136,7 @@ def encoder_block(
     n_filter: int,
     res_connect: bool,
     res_connect_type: str,
+    n_filter_downscale=None,
 ) -> Tuple[tf.Tensor, tf.Tensor]:
     """Encoder block with n_conv convolutional layers followed by downsampling.
     The conv block uses attention and residual connections if specified.
@@ -161,6 +162,8 @@ def encoder_block(
         The options are:
         - skip_first : the first convolutional layer will not be included in the res-block
         - 1x1conv : a 1x1 convolution is used to increase the number of channels
+    n_filter_downscale : int, optional
+        The number of filters for the downscale path, if None, n_filter is used
 
     Returns
     -------
@@ -169,10 +172,12 @@ def encoder_block(
     tf.Tensor
         The tensor before downscaling (before the skip connection)
     """
+    if n_filter_downscale is None:
+        n_filter_downscale = n_filter
     x_before_downscale = conv_block(
         x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
     )
-    x = downscale(x_before_downscale, n_filter=n_filter)
+    x = downscale(x_before_downscale, n_filter=n_filter_downscale)
     return x, x_before_downscale
 
 
@@ -263,6 +268,7 @@ def unet(
     kernel_dims=3,
     stride=1,
     batch_normalization=True,
+    instance_normalization=False,
     use_bias=False,
     drop_out=(False, 0.2),
     upscale="TRANS_CONV",
@@ -329,6 +335,8 @@ def unet(
         stride for all the conv layers, by default: 1.
     batch_normalization : bool, optional
         boolean value, whether to apply batch_norm or not. By default: True.
+    instance_normalization : bool, optional
+        if instance normalization should be used, by default false, should be false if using batchnorm
     use_bias : bool, optional
         boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
         false and vice versa By default: False.
@@ -404,6 +412,11 @@ def unet(
     l2_normalize = loss == "COS"
     regularizer = get_regularizer(*regularize)
 
+    if instance_normalization:
+        assert (
+            instance_normalization != batch_normalization
+        ), "Use instance or batch normalization, not both"
+
     # set up permanent arguments of the layers
     # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
     conv = partial(
@@ -411,6 +424,7 @@ def unet(
         kernel_dims=kernel_dims,
         stride=stride,
         batch_normalization=batch_normalization,
+        instance_normalization=instance_normalization,
         drop_out=drop_out,
         use_bias=use_bias,
         regularizer=regularizer,
@@ -419,7 +433,7 @@ def unet(
         dilation_rate=dilation_rate,
         cross_hair=cross_hair,
     )
-    downscale = partial(
+    downscale_layer = partial(
         layers.downscale,
         downscale_method=downscale,
         kernel_dims=kernel_dims,
@@ -444,10 +458,15 @@ def unet(
         cross_hair=cross_hair,
     )  # stride multiplied by 2 in function
     gate_signal = partial(
-        layers.unet_gating_signal, batch_normalization=batch_normalization
+        layers.unet_gating_signal,
+        batch_normalization=batch_normalization,
+        instance_normalization=instance_normalization,
     )
     attn_block = partial(
-        layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization
+        layers.attn_gating_block,
+        use_bias=use_bias,
+        batch_normalization=batch_normalization,
+        instance_normalization=instance_normalization,
     )
     se_block = partial(layers.se_block, act_func=activation, ratio=ratio)
     cbam_block = partial(layers.cbam_block, ratio=ratio)
@@ -469,16 +488,22 @@ def unet(
     # collect the output for skip connections
     skip_connections = []
     # do the encoding path
-    for filters, n_conv in zip(n_filter[:-1], n_convolutions[:-1]):
+    for filters, filters_downscale, n_conv in zip(
+        n_filter[:-1], n_filter[1:], n_convolutions[:-1]
+    ):
+        # if the downscale is a convolution, then use the same amount of filters as in the next block
+        if downscale != "STRIDE":
+            filters_downscale = filters
         x, x_skip = encoder_block(
             x=x,
             conv=conv,
             attention=encoder_attention_func,
-            downscale=downscale,
+            downscale=downscale_layer,
             n_conv=n_conv,
             n_filter=filters,
             res_connect=res_connect,
             res_connect_type=res_connect_type,
+            n_filter_downscale=filters_downscale,
         )
         skip_connections.append(x_skip)
 

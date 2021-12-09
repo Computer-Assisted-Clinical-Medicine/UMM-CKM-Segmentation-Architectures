@@ -74,6 +74,7 @@ def attn_gating_block(
     inter_shape: int,
     use_bias: bool,
     batch_normalization: bool,
+    instance_normalization=False,
     name=None,
     **kwargs,
 ) -> tf.Tensor:
@@ -149,11 +150,15 @@ def attn_gating_block(
 
     if batch_normalization:
         result = tf.keras.layers.BatchNormalization()(result)
+    if instance_normalization:
+        result = tfa.layers.InstanceNormalization()(result)
 
     return result
 
 
-def unet_gating_signal(x: tf.Tensor, batch_normalization: bool, name=None) -> tf.Tensor:
+def unet_gating_signal(
+    x: tf.Tensor, batch_normalization: bool, instance_normalization=False, name=None
+) -> tf.Tensor:
     """this is simply 1x1 convolution, bn, activation used for calculating gating signal for attention block."""
 
     shape = K.int_shape(x)
@@ -165,6 +170,8 @@ def unet_gating_signal(x: tf.Tensor, batch_normalization: bool, name=None) -> tf
         )(x)
     if batch_normalization:
         x = tf.keras.layers.BatchNormalization()(x)
+    if instance_normalization:
+        x = tfa.layers.InstanceNormalization()(x)
     x = Activation("relu")(x)
 
     return x
@@ -370,7 +377,8 @@ def convolutional(
     batch_normalization: bool,
     drop_out: Tuple,
     regularizer: Optional[tf.keras.regularizers.Regularizer],
-    cross_hair,
+    cross_hair=False,
+    instance_normalization=False,
 ) -> tf.Tensor:
     """
     Implements a convolutional layer: convolution + activation
@@ -415,6 +423,8 @@ def convolutional(
 
     if batch_normalization:
         x = tf.keras.layers.BatchNormalization()(x)
+    if instance_normalization:
+        x = tfa.layers.InstanceNormalization()(x)
 
     if drop_out[0]:
         # ToDo: change between 2D and 3D based on rank of x
@@ -466,7 +476,9 @@ def downscale(
     - passes `x` through an activation operation (See operation.activation() ) and return
     """
 
-    # ToDo: change between 2D and 3D based on rank of x
+    if not isinstance(stride, tuple):
+        stride = (stride,) * (tf.rank(x).numpy() - 2)
+
     if downscale_method == "STRIDE":
         logger.debug("Convolution with Stride")
         logger.debug("Input: %s", x.shape.as_list())
