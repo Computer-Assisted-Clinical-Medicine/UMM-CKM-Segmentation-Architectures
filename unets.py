@@ -57,6 +57,7 @@ def calculate_and_reconstruct_transformer_attentions(
     transformer_reconstructed_list = reconstruct(
         skip_connections=input_skip_features,
         input_attns=transformer_outputs,
+        patch_sizes=patch_sizes,
         kernel_size=kernel_size,
     )
 
@@ -260,6 +261,7 @@ def unet(
     encoder_attention=None,
     n_heads=2,
     l_layers=2,
+    patch_sizes=[16, 8, 4, 2],
     kernel_dims=3,
     stride=1,
     batch_normalization=True,
@@ -323,6 +325,9 @@ def unet(
         Number of heads in each transformer layer. Only used if network name is UCTransNet
     l_layers : int, optional
         Number of layers of transformer. Only used if network name is UCTransNet
+    patch_sizes : int
+        The size of patches to be used to create each embedding in transformer. The sizes are such that each embedding
+        has same dimension in the 2nd axis (i.e. h//patch_size * w//patch_size).
     kernel_dims : int
         shape of all the convolution filter, by default: 3.
     stride : int, optional
@@ -407,7 +412,7 @@ def unet(
     regularizer = get_regularizer(*regularize)
 
     # set up permanent arguments of the layers
-    # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
+    # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)  # set for tests
     conv = partial(
         layers.convolutional,
         kernel_dims=kernel_dims,
@@ -489,7 +494,7 @@ def unet(
     ):  # apply channel transformer and output reconstructed attention in same shape as skip conns
         transformer_reconstructed_features = (
             calculate_and_reconstruct_transformer_attentions(
-                input_skip_features=skip_connections, n_heads=n_heads, l_layers=l_layers
+                input_skip_features=skip_connections, patch_sizes=patch_sizes, n_heads=n_heads, l_layers=l_layers
             )
         )
         skip_connections = transformer_reconstructed_features

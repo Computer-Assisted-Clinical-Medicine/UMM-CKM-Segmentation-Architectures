@@ -84,7 +84,9 @@ def test_dense_tiramisu(in_channels):
 @pytest.mark.parametrize("res_connect", [True])
 @pytest.mark.parametrize("res_connect_type", ["skip_first"])
 @pytest.mark.parametrize("skip_connect", [True])
-@pytest.mark.parametrize("name", ["UCTransNet", "Unet"])
+@pytest.mark.parametrize("name", ["UCTransNet"])
+@pytest.mark.parametrize("n_heads", [2])
+@pytest.mark.parametrize("l_layers", [1])
 def test_unet(
     in_channels,
     batch_norm,
@@ -95,6 +97,8 @@ def test_unet(
     res_connect_type,
     skip_connect,
     name,
+    n_heads,
+    l_layers,
 ):
     in_channels = 1
     input_shape = (96, 96, in_channels)
@@ -107,6 +111,8 @@ def test_unet(
         "res_connect_type": res_connect_type,
         "skip_connect": skip_connect,
         "name": name,
+        "n_heads": n_heads,
+        "l_layers": l_layers,
         "ratio": 2,  # only important for attention models
     }
     model_creation(unet, input_shape, hyperparameters)
@@ -145,6 +151,7 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
         nonTrainableParams = np.sum(
             [np.prod(v.get_shape()) for v in model_built.non_trainable_weights]
         )
+        print('n_heads and l_layers are:', hyperparameters['n_heads'], hyperparameters['l_layers'])
         print(
             "\n model:",
             hyperparameters["name"],
