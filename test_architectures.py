@@ -128,11 +128,11 @@ def test_unet(
 #     model_creation(HRNet, input_shape, hyperparameters)
 
 
-def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=True):
+def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
     # run on CPU
     with tf.device("/device:CPU:0"):
         out_channels = 2
-        batch = 8
+        batch = None
         model_built: tf.keras.Model = model(
             tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
             out_channels,
@@ -163,7 +163,9 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
             metrics="acc",
             optimizer=tf.keras.optimizers.Adam(),
         )
-
+        prediction = model_built.predict(np.zeros((1, 96, 96, 1)))
+        print(prediction.shape)
+    print(model_built.summary())
     if do_plot:
         tf.keras.utils.plot_model(model_built, to_file=f"graph-{model.__name__}.png")
 

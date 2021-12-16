@@ -137,7 +137,8 @@ def encoder_block(
     n_filter: int,
     res_connect: bool,
     res_connect_type: str,
-    n_filter_downscale=None,
+    multi_res_length: int,
+    use_multi_res_block: bool
 ) -> Tuple[tf.Tensor, tf.Tensor]:
     """Encoder block with n_conv convolutional layers followed by downsampling.
     The conv block uses attention and residual connections if specified.
@@ -163,9 +164,11 @@ def encoder_block(
         The options are:
         - skip_first : the first convolutional layer will not be included in the res-block
         - 1x1conv : a 1x1 convolution is used to increase the number of channels
-    n_filter_downscale : int, optional
-        The number of filters for the downscale path, if None, n_filter is used
-
+    use_multi_res_block : bool
+        Whether to use multi resolution block implemented in multiresunet paper.
+    multi_res_length : int
+        Number of times convolution is performed in multi residual path.
+        Only implemented if use_multi_res_block is True.
     Returns
     -------
     tf.Tensor
@@ -173,12 +176,16 @@ def encoder_block(
     tf.Tensor
         The tensor before downscaling (before the skip connection)
     """
-    if n_filter_downscale is None:
-        n_filter_downscale = n_filter
-    x_before_downscale = conv_block(
-        x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
-    )
-    x = downscale(x_before_downscale, n_filter=n_filter_downscale)
+    if use_multi_res_block:
+        x_before_downscale = layers.multi_res_block(x, n_filter)
+    else:
+        x_before_downscale = conv_block(
+            x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
+        )
+    x = downscale(x_before_downscale, n_filter=n_filter)
+    if use_multi_res_block:
+        x_before_downscale = layers.multi_res_path(x, n_filter, multi_res_length)
+
     return x, x_before_downscale
 
 
@@ -194,6 +201,7 @@ def decoder_block(
     n_filter: int,
     res_connect: bool,
     res_connect_type: str,
+    use_multi_res_block: bool
 ) -> tf.Tensor:
     """
     Decoder block, does n_conv convolutions (using the conv function) with
@@ -228,7 +236,8 @@ def decoder_block(
         The options are:
         - skip_first : the first convolutional layer will not be included in the res-block
         - 1x1conv : a 1x1 convolution is used to increase the number of channels
-
+    use_multi_res_block: bool
+        Whether to use multi resolution block implemented in multiresunet paper.
     Returns
     -------
     tf.Tensor
@@ -246,13 +255,14 @@ def decoder_block(
             attn = attention(x_skip, gate=gate)
             x = Concatenate()([x, attn])
         elif transformer_fusion:
-            x = cca_decoder_fusion(
-                decoder_feature=x, transformer_output=x_skip
-            )  # returns concatenated features of i/p
+            x = cca_decoder_fusion(decoder_feature=x, transformer_output=x_skip)  # returns concatenated features of i/p
         else:
             x = Concatenate()([x, x_skip])
     # No attention in the conv block
-    x = conv_block(x, n_conv, conv, n_filter, None, res_connect, res_connect_type)
+    if use_multi_res_block:
+        x = layers.multi_res_block(x, n_filter)
+    else:
+        x = conv_block(x, n_conv, conv, n_filter, None, res_connect, res_connect_type)
     return x
 
 
@@ -264,13 +274,10 @@ def unet(
     n_convolutions=(2, 2, 3, 3, 3),
     attention=False,
     encoder_attention=None,
-    n_heads=2,
-    l_layers=2,
-    patch_sizes=[16, 8, 4, 2],
+    transformer_fusion=False,
     kernel_dims=3,
     stride=1,
     batch_normalization=True,
-    instance_normalization=False,
     use_bias=False,
     drop_out=(False, 0.2),
     upscale="TRANS_CONV",
@@ -289,11 +296,10 @@ def unet(
 ) -> tf.keras.Model:
     """
     Implements U-Net (https://arxiv.org/abs/1505.04597) as the backbone. The add-on architectures are Attention U-Net
-    (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet, SEAttnUnet and UCTransNet. Where Convolutional
-    block attention modules (CBAM - https://arxiv.org/abs/1807.06521) and Squeeze & excitation blocks
+    (https://arxiv.org/abs/1804.03999), CBAMUnet, CBAMAttnUnet, SEUnet and SEAttnUnet. Where Convolutional block
+    attention modules (CBAM - https://arxiv.org/abs/1807.06521) and Squeeze & excitation blocks
     (SE - https://arxiv.org/abs/1709.01507) are added to the encoder of U-Net or Attention U-Net to obtain CBAM and SE
-    attention U-Nets respectively. The UCTransUnet is based on channel attention based on transformers
-    (https://arxiv.org/pdf/2109.04335.pdf).
+    attention U-Nets respectively.
 
     If a recognized name is provided (besides the standard name), the  attention parameters
     will be set accordingly. Possible names are:
@@ -302,7 +308,6 @@ def unet(
      - SEAttnUnet
      - CBAMUnet
      - CBAMAttnUnet
-     - UCTransNet
 
     Parameters
     ----------
@@ -327,21 +332,15 @@ def unet(
          -SE for squeeze and excitation
          -CBAM for Convolutional Block Attention Module
          -PSA for polarized self attention
-    n_heads : int, optional
-        Number of heads in each transformer layer. Only used if network name is UCTransNet
-    l_layers : int, optional
-        Number of layers of transformer. Only used if network name is UCTransNet
-    patch_sizes : int
-        The size of patches to be used to create each embedding in transformer. The sizes are such that each embedding
-        has same dimension in the 2nd axis (i.e. h//patch_size * w//patch_size).
+    transformer_fusion : bool, optional
+        Implements concatenation of decoder features with the corresponding transformer outputs. It is set to True if
+        network name is UCTransNet. By default: False
     kernel_dims : int
         shape of all the convolution filter, by default: 3.
     stride : int, optional
         stride for all the conv layers, by default: 1.
     batch_normalization : bool, optional
         boolean value, whether to apply batch_norm or not. By default: True.
-    instance_normalization : bool, optional
-        if instance normalization should be used, by default false, should be false if using batchnorm
     use_bias : bool, optional
         boolean value, whether to apply bias or not. If batch_normalization is true then use_bias must be
         false and vice versa By default: False.
@@ -360,7 +359,7 @@ def unet(
         The activation used after each layer. By default: 'relu'.
     name : str, optional
         The network that the user wants to implement. Must be one of the following: 'Unet', 'SEUnet',
-        'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet', 'UCTransNEt'. By default: Unet.
+        'SEAttnUnet', 'CBAMUnet', 'CBAMAttnUnet', 'AttnUnet', 'MultiresUnet', 'UCTransNEt'. By default: Unet.
     ratio : int, optional
         The ratio by which features are reduced in SE or CBAM channel attention, by default 2
     dilation_rate : 1, optional
@@ -390,10 +389,11 @@ def unet(
         "CBAMAttnUnet",
         "AttnUnet",
         "PSAUnet",
-        "UCTransNet",
+        "UCTransNet"
     ]
+
+    use_mult_res_blocks = False  # for multiresunet
     # see if the parameters should be inferred
-    transformer_fusion = False
     if name in special_models:
         attention = bool(name in ["AttnUnet", "SEAttnUnet", "CBAMAttnUnet"])
         if name in ["SEUnet", "SEAttnUnet"]:
@@ -403,7 +403,9 @@ def unet(
         elif name in ["PSAUnet"]:
             encoder_attention = "PSA"
         elif name in ["UCTransNet"]:
-            transformer_fusion = True  # allows the decoder block to fuse transformer outputs and decoder features
+            transformer_fusion = True
+        elif name in ["MultiresUnet"]:
+            use_mult_res_blocks = True
 
     # check the rate if SE or CBAM is used
     if encoder_attention is not None:
@@ -414,22 +416,19 @@ def unet(
         raise ValueError("n_filter should have the same length as n_convolutions.")
 
     # set l_normalize true if cos loss is used
-    l2_normalize = loss == "COS"
+    if loss == "COS":
+        l2_normalize = True
+    else:
+        l2_normalize = False
     regularizer = get_regularizer(*regularize)
 
-    if instance_normalization:
-        assert (
-            instance_normalization != batch_normalization
-        ), "Use instance or batch normalization, not both"
-
     # set up permanent arguments of the layers
-    # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)  # set for tests
+    # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
     conv = partial(
         layers.convolutional,
         kernel_dims=kernel_dims,
         stride=stride,
         batch_normalization=batch_normalization,
-        instance_normalization=instance_normalization,
         drop_out=drop_out,
         use_bias=use_bias,
         regularizer=regularizer,
@@ -438,7 +437,7 @@ def unet(
         dilation_rate=dilation_rate,
         cross_hair=cross_hair,
     )
-    downscale_layer = partial(
+    downscale = partial(
         layers.downscale,
         downscale_method=downscale,
         kernel_dims=kernel_dims,
@@ -463,15 +462,10 @@ def unet(
         cross_hair=cross_hair,
     )  # stride multiplied by 2 in function
     gate_signal = partial(
-        layers.unet_gating_signal,
-        batch_normalization=batch_normalization,
-        instance_normalization=instance_normalization,
+        layers.unet_gating_signal, batch_normalization=batch_normalization
     )
     attn_block = partial(
-        layers.attn_gating_block,
-        use_bias=use_bias,
-        batch_normalization=batch_normalization,
-        instance_normalization=instance_normalization,
+        layers.attn_gating_block, use_bias=use_bias, batch_normalization=batch_normalization
     )
     se_block = partial(layers.se_block, act_func=activation, ratio=ratio)
     cbam_block = partial(layers.cbam_block, ratio=ratio)
@@ -493,45 +487,41 @@ def unet(
     # collect the output for skip connections
     skip_connections = []
     # do the encoding path
-    for filters, filters_downscale, n_conv in zip(
-        n_filter[:-1], n_filter[1:], n_convolutions[:-1]
-    ):
-        # if the downscale is a convolution, then use the same amount of filters as in the next block
-        if downscale != "STRIDE":
-            filters_downscale = filters
+    multi_res_length = 4  # in case multiresunet is implemented
+    for filters, n_conv in zip(n_filter[:-1], n_convolutions[:-1]):
         x, x_skip = encoder_block(
             x=x,
             conv=conv,
             attention=encoder_attention_func,
-            downscale=downscale_layer,
+            downscale=downscale,
             n_conv=n_conv,
             n_filter=filters,
             res_connect=res_connect,
             res_connect_type=res_connect_type,
-            n_filter_downscale=filters_downscale,
+            multi_res_length=multi_res_length,
+            use_multi_res_block=use_mult_res_blocks
         )
         skip_connections.append(x_skip)
+        multi_res_length -= 1
 
-    if (
-        name == "UCTransNet"
-    ):  # apply channel transformer and output reconstructed attention in same shape as skip conns
-        transformer_reconstructed_features = (
-            calculate_and_reconstruct_transformer_attentions(
-                input_skip_features=skip_connections, patch_sizes=patch_sizes, n_heads=n_heads, l_layers=l_layers
-            )
-        )
+    if name == 'UCTransNet':  # apply channel transformer and output reconstructed attention in same shape as skip conns
+        transformer_reconstructed_features = calculate_and_reconstruct_transformer_attentions(
+            input_skip_features=skip_connections)
         skip_connections = transformer_reconstructed_features
 
     # bottleneck layer
-    x = conv_block(
-        x=x,
-        conv=conv,
-        n_conv=n_convolutions[-1],
-        n_filter=n_filter[-1],
-        attention=None,
-        res_connect=res_connect,
-        res_connect_type=res_connect_type,
-    )
+    if use_mult_res_blocks:
+        x = layers.multi_res_block(x, n_filter[-1])
+    else:
+        x = conv_block(
+            x=x,
+            conv=conv,
+            n_conv=n_convolutions[-1],
+            n_filter=n_filter[-1],
+            attention=None,
+            res_connect=res_connect,
+            res_connect_type=res_connect_type,
+        )
 
     if attention:
         gate_signal_decoder: Optional[partial] = gate_signal
@@ -561,6 +551,7 @@ def unet(
             n_filter=filters,
             res_connect=res_connect,
             res_connect_type=res_connect_type,
+            use_multi_res_block=use_mult_res_blocks
         )
 
     # final output layer

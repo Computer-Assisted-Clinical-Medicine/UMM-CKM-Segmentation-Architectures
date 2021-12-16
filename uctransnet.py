@@ -3,7 +3,7 @@ import numpy as np
 from typing import Callable, Optional, Tuple, List
 
 import tensorflow as tf
-from tensorflow.keras.layers import Add, Concatenate, Conv2D, Flatten, Dropout,\
+from tensorflow.keras.layers import Add, Concatenate, Conv2D, Flatten, Dropout, Reshape, \
     Embedding, Dense, Softmax, LayerNormalization, UpSampling2D, BatchNormalization, ReLU, GlobalAveragePooling2D
 import tensorflow_addons as tfa
 
@@ -39,7 +39,7 @@ def channel_embedding(img: tf.Tensor, patch_size: int, img_size: int, in_channel
 
     x = patch_embedding(img)
     size_1, size_2, _, size_4 = x.get_shape()
-    x = tf.reshape(x, [size_1, size_2 * size_2, size_4])
+    x = Reshape([size_2 * size_2, size_4])(x)
     # x = tf.transpose(x)
 
     embedding = x + positional_embedding
@@ -276,7 +276,7 @@ def reconstruct(skip_connections: List[tf.Tensor], input_attns: List[tf.Tensor],
     outputs = []
     # reshape the attention outputs
     for i in range(len(input_attns)):
-        reshaped_attns = tf.reshape(input_attns[i], [batch_size, height, width, channel_nums[i]])
+        reshaped_attns = Reshape([height, width, channel_nums[i]])(input_attns[i])
         # upsample the attention features
         reconstruct_attns = UpSampling2D(size=[patch_sizes[i], patch_sizes[i]],
                                          interpolation='bilinear')(reshaped_attns)

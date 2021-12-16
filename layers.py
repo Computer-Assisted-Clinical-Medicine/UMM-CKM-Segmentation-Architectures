@@ -436,6 +436,49 @@ def convolutional(
     return x
 
 
+def multi_res_block(x: tf.Tensor, unet_filter: int, alpha=1.67) -> tf.Tensor:
+    """Calculates multi resolution block from MultiresUnet paper"""
+    w = alpha * unet_filter
+    filter_1 = int(w * 0.167)
+    filter_2 = int(w * 0.333)
+    filter_3 = int(w * 0.5)
+    shortcut = x
+    # do 1x1 conv over the input
+    shortcut = convolutional(shortcut, 1, n_filter=filter_1 + filter_2 + filter_3, act_func=None)
+    # do series of 3x3 convolutions
+    conv3x3 = convolutional(x, 3, n_filter=filter_1, act_func='relu')
+    conv5x5 = convolutional(x, 3, n_filter=filter_2, act_func='relu')
+    conv7x7 = convolutional(x, 3, n_filter=filter_3, act_func='relu')
+
+    out = Concatenate(axis=-1)([conv3x3, conv5x5, conv7x7])
+    out = tf.keras.layers.BatchNormalization(axis=-1)(out)
+    out = add([shortcut, out])
+    out = Activation(activation='relu')(out)
+    out = tf.keras.layers.BatchNormalization(axis=-1)(out)
+
+    return out
+
+
+def multi_res_path(x: tf.Tensor, filters: int, length: int) -> tf.Tensor:
+    """Calculates the residual path from the MultiresUnet paper"""
+    shortcut = x
+    shortcut = convolutional(shortcut, 1, filters, act_func=None)
+    out = convolutional(x, 3, filters, act_func='relu')
+    out = add([shortcut, out])
+    out = Activation(activation='relu')(out)
+    out = tf.keras.layers.BatchNormalization(axis=-1)(out)
+
+    for i in range(length - 1):
+        shortcut = out
+        shortcut = convolutional(shortcut, 1, filters, act_func=None)
+        out = convolutional(x, 3, filters, act_func='relu')
+        out = add([shortcut, out])
+        out = Activation(activation='relu')(out)
+        out = tf.keras.layers.BatchNormalization(axis=-1)(out)
+
+    return out
+
+
 def downscale(
     x: tf.Tensor,
     downscale_method: str,
