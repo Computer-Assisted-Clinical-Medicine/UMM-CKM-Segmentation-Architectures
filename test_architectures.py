@@ -84,7 +84,7 @@ def test_dense_tiramisu(in_channels):
 @pytest.mark.parametrize("res_connect", [True])
 @pytest.mark.parametrize("res_connect_type", ["skip_first"])
 @pytest.mark.parametrize("skip_connect", [True])
-@pytest.mark.parametrize("name", ["UCTransNet"])
+@pytest.mark.parametrize("name", ["MultiresUnet"])
 @pytest.mark.parametrize("n_heads", [2])
 @pytest.mark.parametrize("l_layers", [1])
 def test_unet(
@@ -128,11 +128,11 @@ def test_unet(
 #     model_creation(HRNet, input_shape, hyperparameters)
 
 
-def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=False):
+def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot=True):
     # run on CPU
     with tf.device("/device:CPU:0"):
         out_channels = 2
-        batch = None
+        batch = 8
         model_built: tf.keras.Model = model(
             tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
             out_channels,
@@ -144,7 +144,6 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
         assert output_shape[0] == batch
         assert np.all(np.array(output_shape[1:-1]) == input_shape[:-1])
         assert output_shape[-1] == out_channels
-        # model_built.summary()
         trainableParams = np.sum(
             [np.prod(v.get_shape()) for v in model_built.trainable_weights]
         )
@@ -163,7 +162,7 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
             metrics="acc",
             optimizer=tf.keras.optimizers.Adam(),
         )
-        prediction = model_built.predict(np.zeros((1, 96, 96, 1)))
+        prediction = model_built.predict(np.zeros((1, 96, 96, 1)), batch_size=1)
         print(prediction.shape)
     print(model_built.summary())
     if do_plot:

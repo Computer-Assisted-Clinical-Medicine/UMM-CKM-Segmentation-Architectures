@@ -177,14 +177,14 @@ def encoder_block(
         The tensor before downscaling (before the skip connection)
     """
     if use_multi_res_block:
-        x_before_downscale = layers.multi_res_block(x, n_filter)
+        x_before_downscale = layers.multi_res_block(x, conv, n_filter)
     else:
         x_before_downscale = conv_block(
             x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
         )
     x = downscale(x_before_downscale, n_filter=n_filter)
     if use_multi_res_block:
-        x_before_downscale = layers.multi_res_path(x, n_filter, multi_res_length)
+        x_before_downscale = layers.multi_res_path(x_before_downscale, conv, n_filter, multi_res_length)
 
     return x, x_before_downscale
 
@@ -260,7 +260,7 @@ def decoder_block(
             x = Concatenate()([x, x_skip])
     # No attention in the conv block
     if use_multi_res_block:
-        x = layers.multi_res_block(x, n_filter)
+        x = layers.multi_res_block(x, conv, n_filter)
     else:
         x = conv_block(x, n_conv, conv, n_filter, None, res_connect, res_connect_type)
     return x
@@ -389,7 +389,8 @@ def unet(
         "CBAMAttnUnet",
         "AttnUnet",
         "PSAUnet",
-        "UCTransNet"
+        "UCTransNet",
+        "MultiresUnet"
     ]
 
     use_mult_res_blocks = False  # for multiresunet
@@ -511,7 +512,7 @@ def unet(
 
     # bottleneck layer
     if use_mult_res_blocks:
-        x = layers.multi_res_block(x, n_filter[-1])
+        x = layers.multi_res_block(x, conv, n_filter[-1])
     else:
         x = conv_block(
             x=x,

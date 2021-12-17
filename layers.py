@@ -2,7 +2,8 @@
 """
 # pylint: disable=invalid-name
 import logging
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Callable
+from functools import partial
 
 import numpy as np
 import tensorflow as tf
@@ -417,7 +418,8 @@ def convolutional(
         )
         x = convolutional_layer(x)
 
-    x = activation(act_func)(x)
+    if act_func is not None:
+        x = activation(act_func)(x)
 
     logger.debug("Output: %s", x.shape)
 
@@ -436,7 +438,7 @@ def convolutional(
     return x
 
 
-def multi_res_block(x: tf.Tensor, unet_filter: int, alpha=1.67) -> tf.Tensor:
+def multi_res_block(x: tf.Tensor, conv_block: Callable, unet_filter: int, alpha=1.67) -> tf.Tensor:
     """Calculates multi resolution block from MultiresUnet paper"""
     w = alpha * unet_filter
     filter_1 = int(w * 0.167)
@@ -444,11 +446,11 @@ def multi_res_block(x: tf.Tensor, unet_filter: int, alpha=1.67) -> tf.Tensor:
     filter_3 = int(w * 0.5)
     shortcut = x
     # do 1x1 conv over the input
-    shortcut = convolutional(shortcut, 1, n_filter=filter_1 + filter_2 + filter_3, act_func=None)
+    shortcut = conv_block(shortcut, kernel_dims=1, n_filter=filter_1 + filter_2 + filter_3, act_func=None)
     # do series of 3x3 convolutions
-    conv3x3 = convolutional(x, 3, n_filter=filter_1, act_func='relu')
-    conv5x5 = convolutional(x, 3, n_filter=filter_2, act_func='relu')
-    conv7x7 = convolutional(x, 3, n_filter=filter_3, act_func='relu')
+    conv3x3 = conv_block(x, kernel_dims=3, n_filter=filter_1, act_func='relu')
+    conv5x5 = conv_block(x, kernel_dims=3, n_filter=filter_2, act_func='relu')
+    conv7x7 = conv_block(x, kernel_dims=3, n_filter=filter_3, act_func='relu')
 
     out = Concatenate(axis=-1)([conv3x3, conv5x5, conv7x7])
     out = tf.keras.layers.BatchNormalization(axis=-1)(out)
@@ -459,19 +461,19 @@ def multi_res_block(x: tf.Tensor, unet_filter: int, alpha=1.67) -> tf.Tensor:
     return out
 
 
-def multi_res_path(x: tf.Tensor, filters: int, length: int) -> tf.Tensor:
+def multi_res_path(x: tf.Tensor, conv_block: Callable, filters: int, length: int) -> tf.Tensor:
     """Calculates the residual path from the MultiresUnet paper"""
     shortcut = x
-    shortcut = convolutional(shortcut, 1, filters, act_func=None)
-    out = convolutional(x, 3, filters, act_func='relu')
+    shortcut = conv_block(shortcut, kernel_dims=1, n_filter=filters, act_func=None)
+    out = conv_block(x, kernel_dims=3, n_filter=filters, act_func='relu')
     out = add([shortcut, out])
     out = Activation(activation='relu')(out)
     out = tf.keras.layers.BatchNormalization(axis=-1)(out)
 
     for i in range(length - 1):
         shortcut = out
-        shortcut = convolutional(shortcut, 1, filters, act_func=None)
-        out = convolutional(x, 3, filters, act_func='relu')
+        shortcut = conv_block(shortcut, kernel_dims=1, n_filter=filters, act_func=None)
+        out = conv_block(x, kernel_dims=3, n_filter=filters, act_func='relu')
         out = add([shortcut, out])
         out = Activation(activation='relu')(out)
         out = tf.keras.layers.BatchNormalization(axis=-1)(out)

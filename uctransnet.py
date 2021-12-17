@@ -222,9 +222,7 @@ def n_layer_transformer(input_features: List[tf.Tensor], patch_sizes: List[int],
 
         # add all the corresponding cross attentions and divide by n heads
         for i in range(len(all_embeddings)):
-            sums = tf.zeros(shape=cross_attns[0][i].get_shape(), dtype=tf.float32)
-            for j in range(len(cross_attns)):
-                sums += cross_attns[j][i]
+            sums = tf.keras.layers.add([c[i] for c in cross_attns])
             sums /= n_heads
             mult_cross_attn.append(sums)
 
@@ -270,7 +268,7 @@ def reconstruct(skip_connections: List[tf.Tensor], input_attns: List[tf.Tensor],
         The list of reconstructed tensors ready to be fused with decoder features
     """
 
-    batch_size, n_patchs, _ = input_attns[0].get_shape()
+    _, n_patchs, _ = input_attns[0].get_shape()
     channel_nums = [input_attns[i].get_shape()[-1] for i in range(len(input_attns))]
     height, width = int(np.sqrt(n_patchs)), int(np.sqrt(n_patchs))
     outputs = []
