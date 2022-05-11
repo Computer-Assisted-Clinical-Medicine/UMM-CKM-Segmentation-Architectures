@@ -563,7 +563,7 @@ def unet(
         stride=stride,
         dilation_rate=dilation_rate,
         padding=padding,
-        act_func=select_final_activation(loss, out_channels),
+        act_func='tanh',
         use_bias=False,
         regularizer=regularizer,
         l2_normalize=l2_normalize,
