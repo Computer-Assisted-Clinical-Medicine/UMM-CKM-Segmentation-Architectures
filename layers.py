@@ -89,7 +89,7 @@ def attn_gating_block(
     shape_x = K.int_shape(x)
     shape_g = K.int_shape(gate)
 
-    if tf.rank(x).numpy() == 4:
+    if x.shape.rank == 4:
         theta_x = tf.keras.layers.Conv2D(
             inter_shape, (2, 2), strides=(2, 2), padding="same", use_bias=use_bias
         )(x)
@@ -114,7 +114,7 @@ def attn_gating_block(
         y = multiply([upsample_psi, x])
         result = tf.keras.layers.Conv2D(shape_x[3], (1, 1), padding="same")(y)
 
-    elif tf.rank(x).numpy() == 5:
+    elif x.shape.rank == 5:
         theta_x = tf.keras.layers.Conv3D(
             inter_shape, (2, 2, 2), strides=(2, 2, 2), padding="same", use_bias=use_bias
         )(x)
@@ -163,9 +163,9 @@ def unet_gating_signal(
     """this is simply 1x1 convolution, bn, activation used for calculating gating signal for attention block."""
 
     shape = K.int_shape(x)
-    if tf.rank(x).numpy() == 4:
+    if x.shape.rank == 4:
         x = tf.keras.layers.Conv2D(shape[3] * 1, (1, 1), strides=(1, 1), padding="same")(x)
-    elif tf.rank(x).numpy() == 5:
+    elif x.shape.rank == 5:
         x = tf.keras.layers.Conv3D(
             shape[4] * 1, (1, 1, 1), strides=(1, 1, 1), padding="same"
         )(x)
@@ -393,7 +393,7 @@ def convolutional(
     logger.debug("Convolution")
     logger.debug("Input: %s", x.shape.as_list())
 
-    if tf.rank(x).numpy() == 4:
+    if x.shape.rank == 4:
         logger.debug("Kernel: %s", kernel_dims)
         convolutional_layer = tf.keras.layers.Conv2D(
             filters=n_filter,
@@ -405,7 +405,7 @@ def convolutional(
             kernel_regularizer=regularizer,
         )
         x = convolutional_layer(x)
-    elif tf.rank(x).numpy() == 5:
+    elif x.shape.rank == 5:
         logger.debug("Kernel: %s", kernel_dims)
         convolutional_layer = tf.keras.layers.Conv3D(
             filters=n_filter,
@@ -430,9 +430,9 @@ def convolutional(
 
     if drop_out[0]:
         # ToDo: change between 2D and 3D based on rank of x
-        if tf.rank(x).numpy() == 4:
+        if x.shape.rank == 4:
             x = tf.keras.layers.SpatialDropout2D(drop_out[1])(x)
-        elif tf.rank(x).numpy() == 5:
+        elif x.shape.rank == 5:
             x = tf.keras.layers.SpatialDropout3D(drop_out[1])(x)
 
     return x
@@ -522,12 +522,12 @@ def downscale(
     """
 
     if not isinstance(stride, tuple):
-        stride = (stride,) * (tf.rank(x).numpy() - 2)
+        stride = (stride,) * (x.shape.rank - 2)
 
     if downscale_method == "STRIDE":
         logger.debug("Convolution with Stride")
         logger.debug("Input: %s", x.shape.as_list())
-        if tf.rank(x).numpy() == 4:
+        if x.shape.rank == 4:
             logger.debug("Kernel: %s,Stride: %s", kernel_dims, np.multiply(stride, 2))
             convolutional_layer = tf.keras.layers.Conv2D(
                 filters=n_filter,
@@ -538,7 +538,7 @@ def downscale(
                 use_bias=use_bias,
                 kernel_regularizer=regularizer,
             )
-        elif tf.rank(x).numpy() == 5:
+        elif x.shape.rank == 5:
             logger.debug("Kernel: %s,Stride: %s", kernel_dims, np.multiply(stride, 2))
             convolutional_layer = tf.keras.layers.Conv3D(
                 filters=n_filter,
@@ -554,7 +554,7 @@ def downscale(
         x = activation(act_func)(x)
 
     elif downscale_method == "MAX_POOL":
-        if tf.rank(x).numpy() == 4:
+        if x.shape.rank == 4:
             logger.debug("Max Pool")
             logger.debug("Pool Size: %s", [2, 2])
             logger.debug("Input: %s", x.shape.as_list())
@@ -562,7 +562,7 @@ def downscale(
             x = tf.keras.layers.MaxPool2D(
                 pool_size=[2, 2], strides=[2, 2], padding=padding
             )(x)
-        elif tf.rank(x).numpy() == 5:
+        elif x.shape.rank == 5:
             logger.debug("Max Pool")
             logger.debug("Pool Size: %s", [2, 2, 2])
             logger.debug("Input: %s", x.shape.as_list())
@@ -613,7 +613,7 @@ def upscale(
     """
 
     if not isinstance(stride, tuple):
-        stride = (stride,) * (tf.rank(x).numpy() - 2)
+        stride = (stride,) * (x.shape.rank - 2)
 
     if upscale_method == "TRANS_CONV":
 
@@ -623,7 +623,7 @@ def upscale(
         logger.debug("Kernel: %s Stride: %s", kernel_dims, strides)
         logger.debug("Input: %s", x.shape.as_list())
 
-        if tf.rank(x).numpy() == 4:
+        if x.shape.rank == 4:
             convolutional_layer = tf.keras.layers.Conv2DTranspose(
                 filters=n_filter,
                 kernel_size=kernel_dims,
@@ -634,7 +634,7 @@ def upscale(
                 kernel_regularizer=regularizer,
             )
             x = convolutional_layer(x)
-        elif tf.rank(x).numpy() == 5:
+        elif x.shape.rank == 5:
             convolutional_layer = tf.keras.layers.Conv3DTranspose(
                 filters=n_filter,
                 kernel_size=kernel_dims,
@@ -682,7 +682,7 @@ def last(
     logger.debug("Convolution")
     logger.debug("Input: %s", x.shape.as_list())
 
-    if tf.rank(x).numpy() == 4:
+    if x.shape.rank == 4:
         logger.debug("Kernel: %s", kernel_dims)
         convolutional_layer = tf.keras.layers.Conv2D(
             filters=n_filter,
@@ -695,7 +695,7 @@ def last(
         )
         x = convolutional_layer(x)
 
-    elif tf.rank(x).numpy() == 5:
+    elif x.shape.rank == 5:
 
         logger.debug("Kernel: %s", kernel_dims)
         convolutional_layer = tf.keras.layers.Conv3D(
