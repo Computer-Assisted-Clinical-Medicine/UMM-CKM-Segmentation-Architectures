@@ -292,6 +292,7 @@ def unet(
     res_connect=True,
     res_connect_type="skip_first",
     skip_connect=True,
+    final_activation_function=None,
     **kwargs,
 ) -> tf.keras.Model:
     """
@@ -376,6 +377,10 @@ def unet(
         By default: "skip_first"
     skip_connect : bool, optional
         If skip connections should be used. By default: True
+    final_activation_function : str, optional
+        Select the final activation function. If nothing is specified,
+        it will be chosen according to the loss function
+        By default None
 
     Returns
     -------
@@ -422,6 +427,9 @@ def unet(
     else:
         l2_normalize = False
     regularizer = get_regularizer(*regularize)
+
+    if final_activation_function is None:
+        final_activation_function = select_final_activation(loss, out_channels)
 
     # set up permanent arguments of the layers
     # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
@@ -563,7 +571,7 @@ def unet(
         stride=stride,
         dilation_rate=dilation_rate,
         padding=padding,
-        act_func='tanh',
+        act_func=final_activation_function,
         use_bias=False,
         regularizer=regularizer,
         l2_normalize=l2_normalize,
