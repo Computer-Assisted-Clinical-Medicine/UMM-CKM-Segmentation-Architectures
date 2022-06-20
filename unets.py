@@ -293,6 +293,7 @@ def unet(
     res_connect_type="skip_first",
     skip_connect=True,
     final_activation_function=None,
+    model_name="U-Net",
     **kwargs,
 ) -> tf.keras.Model:
     """
@@ -381,6 +382,8 @@ def unet(
         Select the final activation function. If nothing is specified,
         it will be chosen according to the loss function
         By default None
+    model_name : str, optional
+        The name of the model as used by the tensorflow model, by default U-Net
 
     Returns
     -------
@@ -577,4 +580,4 @@ def unet(
         l2_normalize=l2_normalize,
     )
 
-    return tf.keras.Model(inputs=input_tensor, outputs=logits)
+    return tf.keras.Model(inputs=input_tensor, outputs=logits, name=model_name)
