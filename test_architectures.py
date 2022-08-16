@@ -43,39 +43,6 @@ def test_dense_tiramisu(in_channels):
     model_creation(DenseTiramisu, input_shape)
 
 
-# @pytest.mark.parametrize("in_channels", [1, 3])
-# @pytest.mark.parametrize("batch_norm", [True, False])
-# @pytest.mark.parametrize("act_func", ["relu", "elu"])
-# @pytest.mark.parametrize("attention", [True, False])
-# @pytest.mark.parametrize("encoder_attention", [None, "SE", "CBAM", "PSA"])
-# @pytest.mark.parametrize("res_connect", [True, False])
-# @pytest.mark.parametrize("res_connect_type", ["skip_first", "1x1conv"])
-# @pytest.mark.parametrize("skip_connect", [True, False])
-# def test_unet(
-#     in_channels,
-#     batch_norm,
-#     act_func,
-#     attention,
-#     encoder_attention,
-#     res_connect,
-#     res_connect_type,
-#     skip_connect,
-# ):
-#     in_channels = 1
-#     input_shape = (96, 96, in_channels)
-#     hyperparameters = {
-#         "batch_normalization": batch_norm,
-#         "activation": act_func,
-#         "attention": attention,
-#         "encoder_attention": encoder_attention,
-#         "res_connect": res_connect,
-#         "res_connect_type": res_connect_type,
-#         "skip_connect": skip_connect,
-#         "ratio": 2,  # only important for attention models
-#     }
-#     model_creation(unet, input_shape, hyperparameters)
-
-
 @pytest.mark.parametrize("in_channels", [1])
 @pytest.mark.parametrize("batch_norm", [True])
 @pytest.mark.parametrize("act_func", ["elu"])
@@ -132,7 +99,7 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
     # run on CPU
     with tf.device("/device:CPU:0"):
         out_channels = 2
-        batch = None
+        batch = 8
         model_built: tf.keras.Model = model(
             tf.keras.Input(shape=input_shape, batch_size=batch, dtype=float),
             out_channels,
@@ -151,7 +118,11 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
         nonTrainableParams = np.sum(
             [np.prod(v.get_shape()) for v in model_built.non_trainable_weights]
         )
-        print('n_heads and l_layers are:', hyperparameters['n_heads'], hyperparameters['l_layers'])
+        print(
+            "n_heads and l_layers are:",
+            hyperparameters["n_heads"],
+            hyperparameters["l_layers"],
+        )
         print(
             "\n model:",
             hyperparameters["name"],
@@ -163,7 +134,7 @@ def model_creation(model, input_shape, hyperparameters={}, do_fit=False, do_plot
             metrics="acc",
             optimizer=tf.keras.optimizers.Adam(),
         )
-        prediction = model_built.predict(np.zeros((1, 96, 96, 1)))
+        prediction = model_built.predict(np.zeros((1, 96, 96, 1)), batch_size=1)
         print(prediction.shape)
     print(model_built.summary())
     if do_plot:
