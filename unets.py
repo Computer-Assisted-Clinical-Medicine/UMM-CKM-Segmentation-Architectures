@@ -177,14 +177,14 @@ def encoder_block(
         The tensor before downscaling (before the skip connection)
     """
     if use_multi_res_block:
-        x_before_downscale = layers.multi_res_block(x, n_filter)
+        x_before_downscale = layers.multi_res_block(x, conv, n_filter)
     else:
         x_before_downscale = conv_block(
             x, n_conv, conv, n_filter, attention, res_connect, res_connect_type
         )
     x = downscale(x_before_downscale, n_filter=n_filter)
     if use_multi_res_block:
-        x_before_downscale = layers.multi_res_path(x, n_filter, multi_res_length)
+        x_before_downscale = layers.multi_res_path(x_before_downscale, conv, n_filter, multi_res_length)
 
     return x, x_before_downscale
 
@@ -260,7 +260,7 @@ def decoder_block(
             x = Concatenate()([x, x_skip])
     # No attention in the conv block
     if use_multi_res_block:
-        x = layers.multi_res_block(x, n_filter)
+        x = layers.multi_res_block(x, conv, n_filter)
     else:
         x = conv_block(x, n_conv, conv, n_filter, None, res_connect, res_connect_type)
     return x
@@ -292,6 +292,8 @@ def unet(
     res_connect=True,
     res_connect_type="skip_first",
     skip_connect=True,
+    final_activation_function=None,
+    model_name="U-Net",
     **kwargs,
 ) -> tf.keras.Model:
     """
@@ -376,6 +378,12 @@ def unet(
         By default: "skip_first"
     skip_connect : bool, optional
         If skip connections should be used. By default: True
+    final_activation_function : str, optional
+        Select the final activation function. If nothing is specified,
+        it will be chosen according to the loss function
+        By default None
+    model_name : str, optional
+        The name of the model as used by the tensorflow model, by default U-Net
 
     Returns
     -------
@@ -389,7 +397,8 @@ def unet(
         "CBAMAttnUnet",
         "AttnUnet",
         "PSAUnet",
-        "UCTransNet"
+        "UCTransNet",
+        "MultiresUnet"
     ]
 
     use_mult_res_blocks = False  # for multiresunet
@@ -421,6 +430,9 @@ def unet(
     else:
         l2_normalize = False
     regularizer = get_regularizer(*regularize)
+
+    if final_activation_function is None:
+        final_activation_function = select_final_activation(loss, out_channels)
 
     # set up permanent arguments of the layers
     # stride = [stride] * (tf.rank(input_tensor).numpy() - 2)
@@ -511,7 +523,7 @@ def unet(
 
     # bottleneck layer
     if use_mult_res_blocks:
-        x = layers.multi_res_block(x, n_filter[-1])
+        x = layers.multi_res_block(x, conv, n_filter[-1])
     else:
         x = conv_block(
             x=x,
@@ -562,10 +574,10 @@ def unet(
         stride=stride,
         dilation_rate=dilation_rate,
         padding=padding,
-        act_func=select_final_activation(loss, out_channels),
+        act_func=final_activation_function,
         use_bias=False,
         regularizer=regularizer,
         l2_normalize=l2_normalize,
     )
 
-    return tf.keras.Model(inputs=input_tensor, outputs=logits)
+    return tf.keras.Model(inputs=input_tensor, outputs=logits, name=model_name)
